@@ -14,8 +14,6 @@ from load_data import load_data
 DATA_SEED = 0
 MAX_CORNERS = 2
 
-test = 1
-
 
 def get_k_folds(data, k):
     """
