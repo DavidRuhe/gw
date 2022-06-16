@@ -1,26 +1,9 @@
-from functools import partial
-import math
-from click import progressbar
-import torch
+import os
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import torch
 import unittest
-
-# import pymc3 as pm
-from pyro.distributions import TorchDistribution
-from torch.distributions import constraints
-import pyro
-from pyro.infer.mcmc import MCMC, NUTS, HMC
-
-# import torch.distributions as D
-from torch.distributions.mixture_same_family import MixtureSameFamily
-
-from pathos.multiprocessing import ProcessingPool as Pool
-
-# from multiprocessing import Pool
-
-PRINT_INTERVAL = 32
+from tqdm import trange
+from numpy.lib.format import open_memmap
 
 
 class Mixture(torch.distributions.Distribution):
@@ -54,71 +37,6 @@ class Mixture(torch.distributions.Distribution):
         return log_prob
 
 
-def run_mcmc(i, initial_params, potential_fn, potential_fn_kwargs):
-    potential_fn = partial(potential_fn, **potential_fn_kwargs)
-    nuts = NUTS(potential_fn=potential_fn)
-    mcmc = MCMC(
-        kernel=nuts,
-        warmup_steps=256,
-        initial_params=initial_params,
-        num_samples=1024,
-    )
-
-    mcmc.run()
-    return mcmc.get_samples()["theta"]
-    # samples.append(mcmc.get_samples()["theta"])
-
-
-def potential_fn_nonlinear_gaussian(z, prior, sigmasq_x_theta, data):
-    theta = z["theta"]
-    theta = torch.nn.functional.softplus(theta)
-
-    prior_log_prob = -prior.log_prob(theta)
-    nll = -torch.distributions.Normal(
-        torch.tanh(theta), sigmasq_x_theta**0.5
-    ).log_prob(data)
-    return torch.mean(prior_log_prob + nll)
-
-
-def sample_population(num_events):
-
-    samples = []
-    # for run in range(1):
-
-    num_events = 16
-    n1 = torch.distributions.Normal(loc=torch.tensor([12.0]), scale=torch.tensor([1.0]))
-    n2 = torch.distributions.Normal(loc=torch.tensor([24.0]), scale=torch.tensor([1.0]))
-    logn = torch.distributions.LogNormal(
-        loc=torch.tensor([1.0]), scale=torch.tensor([1.3])
-    )
-    prior = Mixture([n1, n2, logn], [0.3, 0.3, 0.4])
-    theta = prior.sample(num_events)
-    p_x_theta = torch.distributions.Normal(torch.tanh(theta), torch.tensor([0.1]))
-    data = p_x_theta.sample((num_events,))
-
-    sigmasq_x_theta = 0.1**2
-
-    initial_params = {
-        "theta": (torch.FloatTensor(1, 1).uniform_(theta.min(), theta.max()))
-    }
-    potential_fn_kwargs = dict(prior=prior, sigmasq_x_theta=sigmasq_x_theta, data=data)
-
-    kwargs = {
-        "potential_fn": potential_fn_nonlinear_gaussian,
-        "potential_fn_kwargs": potential_fn_kwargs,
-        "initial_params": initial_params,
-    }
-
-    # Note! MCMC class num_chains also uses multiprocessing, but this approach ensures that I  can pass single events and run them in parallel (probably Pyro  can do this too, but not sure how)
-    with Pool() as p:
-        samples = p.map(
-            partial(run_mcmc, **kwargs),
-            range(4),
-        )
-
-    return samples
-
-
 class GaussianLikelihood:
     def __init__(self, mu_x_theta, sigmasq) -> None:
         self.mu_x_theta = mu_x_theta
@@ -128,38 +46,6 @@ class GaussianLikelihood:
         return torch.distributions.Normal(
             self.mu_x_theta(theta), self.sigmasq**0.5
         ).log_prob(x)
-
-
-def unnormalized_posterior(z, prior, likelihood, data):
-    theta = z["theta"]
-    # theta = torch.nn.functional.softplus(theta)
-    theta = torch.exp(theta)
-
-    prior_log_prob = -prior.log_prob(theta).exp()
-    nll = -likelihood.log_prob(data, theta).exp()
-    return torch.mean(prior_log_prob + nll)
-
-
-def sample_posterior(i_datum, prior, likelihood, num_samples):
-
-    i, datum = i_datum
-    if i % PRINT_INTERVAL == 0:
-        print(f"Starting sample {i}.")
-    potential_fn = partial(
-        unnormalized_posterior, prior=prior, likelihood=likelihood, data=datum
-    )
-
-    nuts = NUTS(potential_fn=potential_fn)
-    mcmc = MCMC(
-        kernel=nuts,
-        warmup_steps=256,
-        initial_params={"theta": 33.07 + torch.randn(1, 1)},
-        num_samples=num_samples,
-        disable_progbar=True,
-    )
-    mcmc.run()
-
-    return mcmc.get_samples()["theta"]
 
 
 class PowerLaw(torch.distributions.Distribution):
@@ -184,59 +70,162 @@ class PowerLaw(torch.distributions.Distribution):
         return self.xmin * (1 - u) ** (1 / (1 + self.alpha))
 
 
-if __name__ == "__main__":
-    # samples = sample_population(128)
-    # samples = torch.cat(samples, dim=0)
-    # samples = samples.squeeze().numpy()
-    # print(len(samples))
-    # sns.kdeplot(samples)
-    # plt.savefig("theta_samples.png")
+def metropolis_hastings(
+    initial_params,
+    potential_fn,
+    n_samples,
+    initial_step_size=1,
+    burn_in=1024,
+    target_acceptance_rate=0.234,
+    step_size_decay=0.999,
+    print_interval=128,
+    length_decision_history=512,
+):
+    """Run Metropolis-Hastings algorithm.
+    Args:
 
-    # num_events = 128
-    # n1 = torch.distributions.Normal(loc=torch.tensor([12.0]), scale=torch.tensor([1.0]))
-    # n2 = torch.distributions.Normal(loc=torch.tensor([24.0]), scale=torch.tensor([1.0]))
-    # logn = torch.distributions.LogNormal(
-    #     loc=torch.tensor([1.0]), scale=torch.tensor([1.3])
-    # )
-    # prior = Mixture([n1, n2, logn], [0.3, 0.3, 0.4])
-    # theta = prior.sample(num_events).squeeze()
+        initial_params: tensor with initial parameters
+        potential_fn: function that returns potential value to be maximized
+        n_samples: number of samples to be generated
+        initial_step_size: initial step size
+        burn_in: number of samples to discard before starting to collect samples
+        target_acceptance_rate: target acceptance rate
+        step_size_decay: step size decay
+        print_interval: number of samples between printing progress
+        length_decision_history: length of decision history to keep
 
-    likelihood = GaussianLikelihood(
-        mu_x_theta=lambda theta: torch.tanh(theta), sigmasq=0.1**2
-    )
-    lpeak = 0.1
-    mmax = 86.22
-    mmin = 4.59
-    alpha = 2.63
-    sigmam = 5.69
-    mum = 33.07
-    prior = Mixture(
-        (torch.distributions.Normal(mum, sigmam), PowerLaw(-alpha, mmin)),
-        (lpeak, 1 - lpeak),
-    )
-    num_events = 1024
-    theta = prior.sample(num_events).squeeze()
-    p_x_theta = torch.distributions.Normal(torch.tanh(theta), torch.tensor([0.1]))
-    data = p_x_theta.sample((1,)).squeeze()
+        Returns:
+        samples: tensor of samples
+    """
+    n_events = len(initial_params)
+    step_sizes = torch.ones(n_events) * initial_step_size
+    decisions = []
+    samples = []
 
-    with Pool() as p:
-        # for datum in data:
-        #     thetas = sample_posterior(datum, prior, likelihood)
-        map_fn = partial(
-            sample_posterior, prior=prior, likelihood=likelihood, num_samples=1
+    assert torch.isfinite(potential_fn(initial_params)).all()
+
+    x = initial_params
+    for i in trange(n_samples + burn_in):
+        if i > burn_in:
+            samples.append(x.clone())
+
+        x_ = x + torch.randn_like(x) * step_sizes
+
+        ratios = potential_fn(x_) - potential_fn(x)
+        u = torch.rand_like(ratios).log()
+        accepts = u <= ratios
+        decisions.append(accepts)
+        x[accepts] = x_[accepts]
+        accept_ratios = torch.mean(torch.stack(decisions).float(), dim=0)
+
+        step_sizes[accept_ratios < target_acceptance_rate] *= step_size_decay
+        step_sizes[accept_ratios >= target_acceptance_rate] /= step_size_decay
+
+        decisions = decisions[-length_decision_history:]
+        if i > burn_in and i % print_interval == 0:
+            assert not torch.any(accept_ratios == 0), print(
+                "Try increasing initial step size."
+            )
+            assert not torch.any(accept_ratios == 1)
+
+    return torch.stack(samples)
+
+
+def rand_between(shape, low, high):
+    return torch.Tensor(*shape).uniform_(low, high)
+
+
+class GaussianPlusPeakSimulator:
+    def __init__(
+        self,
+        output_path,
+        num_events,
+        num_posterior_samples,
+        lpeak=0.1,
+        mmax=86.22,
+        mmin=4.59,
+        alpha=2.63,
+        sigmam=5.69,
+        mum=33.07,
+        sigmasq=1,
+        burn_in=1024,
+    ) -> None:
+
+        self.output_path = output_path
+        self.num_events = num_events
+        self.num_posterior_samples = num_posterior_samples
+        self.lpeak = lpeak
+        self.mmax = mmax
+        self.mmin = mmin
+        self.alpha = alpha
+        self.sigmam = sigmam
+        self.mum = mum
+        self.sigmasq = sigmasq
+        self.burn_in = burn_in
+
+    def run(self):
+        # Generate events
+
+        prior = Mixture(
+            (
+                torch.distributions.Normal(self.mum, self.sigmam),
+                PowerLaw(-self.alpha, self.mmin),
+            ),
+            (self.lpeak, 1 - self.lpeak),
         )
-        thetas = p.map(map_fn, enumerate(data))
+        theta = prior.sample(self.num_events).squeeze()
+        p_x_theta = torch.distributions.Normal(torch.sqrt(theta), self.sigmasq**0.5)
+        data = p_x_theta.sample().squeeze()
 
-    thetas = torch.stack(thetas).squeeze(-1).squeeze(-1)
-    # for i, theta in enumerate(thetas):
-    #     sns.kdeplot(theta.numpy())
-    #     plt.savefig(f"theta_posterior_{i}.png")
-    #     plt.close()
+        likelihood = GaussianLikelihood(
+            mu_x_theta=lambda theta: torch.sqrt(theta), sigmasq=self.sigmasq**0.5
+        )
 
-    breakpoint()
-    thetas_marginal = thetas[:, -1].exp()
-    sns.kdeplot(thetas_marginal, label="mcmc marginal")
-    sns.kdeplot(theta, label="true marginal")
-    plt.legend()
-    plt.savefig("theta_marginal.png")
-    plt.close()
+        def potential_fn(theta):
+            densities = torch.full((len(theta),), -torch.inf)
+            mask = (theta > self.mmin) & (theta < self.mmax)
+            theta = theta[mask]
+            prior_log_prob = prior.log_prob(theta)
+            likelihood_log_prob = likelihood.log_prob(data[mask], theta)
+            densities[mask] = prior_log_prob + likelihood_log_prob
+            return densities
+
+        initial_params = rand_between((self.num_events,), self.mmin, self.mmax)
+
+        theta = metropolis_hastings(
+            initial_params=initial_params,
+            potential_fn=potential_fn,
+            n_samples=self.num_posterior_samples,
+            burn_in=self.burn_in,
+        )
+
+        memmap = open_memmap(
+            self.output_path,
+            mode="w+",
+            dtype=np.float32,
+            shape=(self.num_events, self.num_posterior_samples),
+        )
+        memmap[:] = theta.numpy()
+        memmap.flush()
+        del memmap
+
+        print(
+            f"Simulated {self.num_events} events with {self.num_posterior_samples} posterior samples."
+        )
+        print(f"Saved to {self.output_path}")
+
+
+
+
+class TestGaussianPlusPeakSimulator(unittest.TestCase):
+    def test_run(self):
+        output_path = "test_mixture_simulator.npy"
+        simulator = GaussianPlusPeakSimulator(
+            output_path=output_path, num_events=2, num_posterior_samples=2, burn_in=2
+        )
+        simulator.run()
+        os.remove(output_path)
+
+
+if __name__ == "__main__":
+    unittest.main()
