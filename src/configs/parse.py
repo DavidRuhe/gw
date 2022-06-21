@@ -27,6 +27,20 @@ def flatten(d, parent_key="", sep="."):
     return dict(items)
 
 
+def unflatten(d: dict, sep="."):
+    assert isinstance(d, dict)
+    result = dict()
+    for key, value in d.items():
+        parts = key.split(sep)
+        d = result
+        for part in parts[:-1]:
+            if part not in d:
+                d[part] = dict()
+            d = d[part]
+        d[parts[-1]] = value
+    return result
+
+
 def rgetattr(obj, attr, *args):
     def _getattr(obj, attr):
         assert isinstance(obj, SimpleNamespace)
@@ -100,3 +114,42 @@ def parse_cfg():
 
     utils.set_seed(cfg.seed)
     return cfg
+
+
+def add_arguments(parser, cfg):
+    for k, v in cfg.items():
+        parser.add_argument(f"--" + k, type=parse_arg_default(type(v)), default=v)
+
+
+def add_group(parser, base_args, cfg, group_name):
+
+    group = parser.add_argument_group(group_name)
+    for k, v in cfg.items():
+        help = None
+        if k in base_args:
+            help = argparse.SUPPRESS
+
+        group.add_argument(
+            f"--{group_name}." + k,
+            type=parse_arg_default(type(v)),
+            default=v,
+            help=help,
+        )
+
+
+def parse_args():
+    config_file = get_config_from_sys_argv()
+    try:
+        parser = copy(
+            importlib.import_module(
+                config_file.replace("/", ".").replace(".py", "")
+            ).parser
+        )
+    except ModuleNotFoundError:
+        raise Exception(f"File {config_file} not found.")
+    except AttributeError:
+        raise Exception(f"Cannot access 'parser' attribute of {config_file}.")
+
+    args = parser.parse_args()
+    args = unflatten(vars(args))
+    return args
