@@ -23,7 +23,9 @@ class ToyDataset(torch.utils.data.TensorDataset):
     def __init__(self, name, split, fold=0, test_size=0.1):
 
         self.data = load_data(name)
-        self.test_data, self.train_data = train_test_split(self.data, test_size)
+        self.test_data, self.train_data = train_test_split(self.data, test_fraction=test_size)
+        self.test_data = self.test_data[0]
+        self.train_data = self.train_data[0]
         folds = get_k_folds(self.train_data, 5)
         fold_indices = folds[fold]
         valid_indices, train_indices = fold_indices
@@ -33,9 +35,3 @@ class ToyDataset(torch.utils.data.TensorDataset):
             super().__init__(self.train_data[valid_indices])
         elif split == "test":
             super().__init__(self.test_data)
-
-        print(
-            self.train_data[train_indices].sum(),
-            self.train_data[valid_indices].sum(),
-            self.test_data.sum(),
-        )

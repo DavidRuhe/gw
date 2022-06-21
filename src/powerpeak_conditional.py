@@ -1,6 +1,4 @@
 import os
-import random
-import numpy as np
 import torch
 
 
@@ -19,10 +17,12 @@ import pyro.distributions.transforms as T
 import pytorch_lightning as pl
 import torch
 from torch.utils.data import DataLoader
+import seaborn as sns
 
 import data
 import wandb
 from configs.parse import parse_args
+import math
 
 MAX_CORNERS = 2
 USE_WANDB = (
@@ -38,11 +38,11 @@ def logmeanexp(x, dim, keepdim=False):
 
 
 class NormalizingFlow(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, d=1):
         super().__init__()
 
-        self.base_dist = dist.Normal(torch.zeros(2), torch.ones(2))
-        self.spline_transform = T.spline_coupling(2, count_bins=16)
+        self.base_dist = dist.Normal(torch.zeros(d), torch.ones(d))
+        self.spline_transform = T.spline_coupling(d)
         self.flow_dist = dist.TransformedDistribution(
             self.base_dist, [self.spline_transform]
         )
@@ -51,10 +51,16 @@ class NormalizingFlow(pl.LightningModule):
         return torch.optim.Adam(self.spline_transform.parameters())
 
     def step(self, batch, batch_idx):
-        (x,) = batch
-        log_prob = self.flow_dist.log_prob(x)
-        loss = -log_prob.mean()
-        return loss
+        (x_marginal, x_posterior) = batch
+
+        log_prob = torch.logsumexp(
+            self.flow_dist.log_prob(x_posterior.reshape(-1, 1)).view(x_posterior.shape),
+            dim=-1,
+        )
+
+        log_prob = log_prob - math.log(x_posterior.shape[-1])
+
+        return -log_prob.mean()
 
     def training_step(self, batch, batch_idx):
         return self.step(batch, batch_idx)
@@ -69,10 +75,10 @@ class NormalizingFlow(pl.LightningModule):
         return loss
 
 
-def evaluate(dir, model, test_dataset, num_samples=1024):
-
+def evaluate(dir, model, test_dataset, flow_samples=1024):
+    num_samples = min(flow_samples, len(test_dataset))
     X_test = torch.stack([test_dataset[i][0] for i in range(num_samples)])
-    X_flow = model.flow_dist.sample((1024,)).numpy()
+    X_flow = model.flow_dist.sample((flow_samples,)).numpy()
 
     n, d = X_flow.shape
 
@@ -98,6 +104,17 @@ def evaluate(dir, model, test_dataset, num_samples=1024):
         plt.savefig(save_dir, bbox_inches="tight")
         plt.close()
         logging.info(f"Saved joint distribution to {save_dir}")
+
+    else:
+        save_dir = os.path.join(dir, "marginal_distribution.png")
+        sns.kdeplot(X_test[:, 0], label="data")
+        sns.kdeplot(X_flow[:, 0], label="flow")
+        plt.title(r"$p(x)$")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(save_dir, bbox_inches="tight")
+        plt.close()
+        logging.info(f"Saved marginal distribution to {save_dir}")
 
     #         plt.subplot(1, 2, 1)
     #         sns.kdeplot(
@@ -163,12 +180,6 @@ def evaluate(dir, model, test_dataset, num_samples=1024):
     #         plt.close()
 
     #     else:
-    #         sns.kdeplot(X[:, 0], label="data")
-    #         sns.kdeplot(X_flow[:, 0], label="flow")
-    #         plt.title(r"$p(x)$")
-    #         plt.legend()
-    #         plt.savefig(f"marginals.png")
-    #         plt.close()
 
 
 def main(args):
@@ -187,6 +198,7 @@ def main(args):
 
     model = NormalizingFlow()
     trainer = pl.Trainer(
+        **args["trainer"],
         callbacks=[callbacks.EarlyStopping(monitor="val_loss", mode="min")],
         logger=loggers.CSVLogger(args["dir"]),
         deterministic=True,
@@ -216,7 +228,9 @@ if __name__ == "__main__":
         if USE_WANDB:
             wandb.finish()
             if os.path.exists(tmpdir):
-                os.system(f"wandb sync {tmpdir}")
+                os.system(
+                    f"wandb sync {tmpdir} --clean --clean-old-hours 0 --clean-force"
+                )
         else:
             if exception is None:
                 os.system(f"mv {tmpdir} ../local_runs/")
