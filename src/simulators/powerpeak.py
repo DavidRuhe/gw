@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import torch
-import unittest
 from tqdm import trange
 from numpy.lib.format import open_memmap
 
@@ -99,13 +98,15 @@ def metropolis_hastings(
     """
     n_events = len(initial_params)
     step_sizes = torch.ones(n_events) * initial_step_size
-    decisions = []
-    samples = []
 
     assert torch.isfinite(potential_fn(initial_params)).all()
 
     x = initial_params
-    for i in trange(n_samples + burn_in):
+
+    samples = []
+    decisions = []
+
+    for i in trange(n_samples + burn_in + 1):
         if i > burn_in:
             samples.append(x.clone())
 
@@ -135,7 +136,7 @@ def rand_between(shape, low, high):
     return torch.Tensor(*shape).uniform_(low, high)
 
 
-class GaussianPlusPeakSimulator:
+class PowerPlusPeakSimulator:
     def __init__(
         self,
         output_path,
@@ -199,6 +200,8 @@ class GaussianPlusPeakSimulator:
             burn_in=self.burn_in,
         )
 
+        theta = theta.permute(1, 0)  # (num_events, num_posterior_samples)
+
         memmap = open_memmap(
             self.output_path,
             mode="w+",
@@ -213,19 +216,3 @@ class GaussianPlusPeakSimulator:
             f"Simulated {self.num_events} events with {self.num_posterior_samples} posterior samples."
         )
         print(f"Saved to {self.output_path}")
-
-
-
-
-class TestGaussianPlusPeakSimulator(unittest.TestCase):
-    def test_run(self):
-        output_path = "test_mixture_simulator.npy"
-        simulator = GaussianPlusPeakSimulator(
-            output_path=output_path, num_events=2, num_posterior_samples=2, burn_in=2
-        )
-        simulator.run()
-        os.remove(output_path)
-
-
-if __name__ == "__main__":
-    unittest.main()
