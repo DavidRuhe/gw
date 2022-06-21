@@ -6,3 +6,4 @@ scikit-learn==1.1.1
 tqdm==4.64.0
 pytorch-lightning==1.6.4
 pyro-ppl==1.8.1
+wandb==0.12.18
