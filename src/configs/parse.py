@@ -1,4 +1,3 @@
-from audioop import add
 import importlib
 from types import SimpleNamespace
 import sys
@@ -6,6 +5,7 @@ import argparse
 import random
 from copy import copy
 import ast
+from utils import set_seed
 
 
 import utils
@@ -152,4 +152,5 @@ def parse_args():
 
     args = parser.parse_args()
     args = unflatten(vars(args))
+    set_seed(args['seed'])
     return args

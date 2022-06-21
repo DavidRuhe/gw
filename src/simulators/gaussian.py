@@ -1,8 +1,7 @@
-import math
 import os
+import math
 import torch
 from numpy.lib.format import open_memmap
-import unittest
 import numpy as np
 
 
@@ -21,6 +20,7 @@ class GaussianSimulator:
     ):
         super().__init__()
         self.output_path = output_path
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
         self.num_events = num_events
         self.num_posterior_samples = num_posterior_samples
         self.dim = dim
@@ -51,6 +51,7 @@ class GaussianSimulator:
             self.num_events, self.num_posterior_samples
         ) * math.sqrt(sigmasq_theta_x)
 
+
         memmap = open_memmap(
             self.output_path,
             mode="w+",
@@ -66,18 +67,3 @@ class GaussianSimulator:
         )
         print(f"Saved to {self.output_path}")
 
-
-class TestGaussianSimulator(unittest.TestCase):
-    def test_simulate(self):
-        output_path = "test_gaussian_simulator.npy"
-        simulator = GaussianSimulator(
-            output_path, num_events=16, num_posterior_samples=32
-        )
-        simulator.run()
-        memmap = open_memmap(output_path, mode="r")
-        self.assertEqual(memmap.shape, (16, 32))
-        os.remove(output_path)
-
-
-if __name__ == "__main__":
-    unittest.main()

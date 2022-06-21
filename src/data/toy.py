@@ -2,7 +2,6 @@ import torch
 import numpy as np
 from sklearn import datasets
 from sklearn.preprocessing import StandardScaler
-import unittest
 
 
 DATA_SEED = 0
@@ -66,10 +65,3 @@ class ToyDataset(torch.utils.data.TensorDataset):
 
         print(self.train_data[train_indices].sum(), self.train_data[valid_indices].sum(), self.test_data.sum())
 
-
-class TestToyDataset(unittest.TestCase):
-    def test_toy_dataset(self):
-        dataset = ToyDataset("circles", 0)
-        self.assertTrue(dataset[0][0].shape == (2,))
-        dataset = ToyDataset("moons", 0)
-        self.assertTrue(dataset[0][0].shape == (2,))

@@ -1,7 +1,6 @@
 import os
 import numpy as np
 import torch
-import unittest
 from tqdm import trange
 from numpy.lib.format import open_memmap
 
@@ -217,17 +216,3 @@ class PowerPlusPeakSimulator:
             f"Simulated {self.num_events} events with {self.num_posterior_samples} posterior samples."
         )
         print(f"Saved to {self.output_path}")
-
-
-class TestGaussianPlusPeakSimulator(unittest.TestCase):
-    def test_run(self):
-        output_path = "test_ppp_simulator.npy"
-        simulator = PowerPlusPeakSimulator(
-            output_path=output_path, num_events=2, num_posterior_samples=2, burn_in=2
-        )
-        simulator.run()
-        os.remove(output_path)
-
-
-if __name__ == "__main__":
-    unittest.main()

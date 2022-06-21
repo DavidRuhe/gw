@@ -4,19 +4,6 @@ import numpy as np
 import torch
 
 
-def set_seed(seed: int, workers: bool = False):
-    seed = int(seed)
-    random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    os.environ["PL_GLOBAL_SEED"] = str(seed)
-    if workers:
-        os.environ["PL_SEED_WORKERS"] = f"{int(workers)}"
-
-
 from pytorch_lightning import loggers, callbacks
 
 import os
@@ -185,7 +172,6 @@ def evaluate(dir, model, test_dataset, num_samples=1024):
 
 
 def main(args):
-    set_seed(args["seed"])
     dataset = partial(getattr(data, args["dataset"].pop("object")), **args["dataset"])
     train_dataset = dataset(split="train")
     valid_dataset = dataset(split="valid")
@@ -221,7 +207,7 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmpdir:
         args["dir"] = tmpdir
         if USE_WANDB:
-            wandb.init(config=vars(args))
+            wandb.init(config=args)
         try:
             main(args)
         except (Exception, KeyboardInterrupt) as e:
