@@ -1,2 +1,2 @@
 from .toy import ToyDataset
-from .powerlawpeak_marginal import PowerPlusPeakMarginalDataset
+from .powerpeak import PowerPlusPeakDataset

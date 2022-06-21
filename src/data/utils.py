@@ -1,14 +1,18 @@
 import torch
+
 DATA_SEED = 42
 
-def train_test_split(data, test_fraction):
+
+def train_test_split(*tensors, test_fraction):
     """
     Split data into train and test sets.
     """
-    n = len(data)
+    n = len(tensors[0])
     indices = torch.randperm(n, generator=torch.Generator().manual_seed(DATA_SEED))
     test_size = int(n * test_fraction)
-    return data[indices[:test_size]], data[indices[test_size:]]
+    test_data = [tensor[indices[:test_size]] for tensor in tensors]
+    train_data = [tensor[indices[test_size:]] for tensor in tensors]
+    return test_data, train_data
 
 
 def get_k_folds(data, k):

@@ -24,6 +24,6 @@ add_group(parser, base_args, trainer_cfg, "trainer")
 
 class TestConfig(unittest.TestCase):
     def test_toy_run(self):
-        command = f"WANDB_DISABLED=TRUE python powerpeak_marginal.py -C {os.path.relpath(__file__)} --dataset.path=../unittest_data/powerpeak/ --trainer.max_epochs=1 --train"
+        command = f"WANDB_DISABLED=TRUE python powerpeak_conditional.py -C {os.path.relpath(__file__)} --dataset.path=../unittest_data/powerpeak/ --trainer.max_epochs=1 --train"
         result = os.system(command)
         self.assertEqual(result, 0)

@@ -44,7 +44,7 @@ class NormalizingFlow(pl.LightningModule):
         return torch.optim.Adam(self.spline_transform.parameters())
 
     def step(self, batch, batch_idx):
-        (x,) = batch
+        (x, _) = batch
         log_prob = self.flow_dist.log_prob(x)
         loss = -log_prob.mean()
         return loss
