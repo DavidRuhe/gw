@@ -26,6 +26,5 @@ from configs.parse import add_arguments
 base_parser = argparse.ArgumentParser(add_help=False)
 base_cfg = dict(
     seed=42,
-    batch_size=512,
 )
 add_arguments(base_parser, base_cfg)

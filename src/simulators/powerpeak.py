@@ -153,6 +153,7 @@ class PowerPlusPeakSimulator:
     ) -> None:
 
         self.output_path = output_path
+        os.makedirs(self.output_path, exist_ok=True)
         self.num_events = num_events
         self.num_posterior_samples = num_posterior_samples
         self.lpeak = lpeak
@@ -193,26 +194,40 @@ class PowerPlusPeakSimulator:
 
         initial_params = rand_between((self.num_events,), self.mmin, self.mmax)
 
-        theta = metropolis_hastings(
+        theta_posterior = metropolis_hastings(
             initial_params=initial_params,
             potential_fn=potential_fn,
             n_samples=self.num_posterior_samples,
             burn_in=self.burn_in,
         )
 
-        theta = theta.permute(1, 0)  # (num_events, num_posterior_samples)
+        theta_posterior = theta_posterior.permute(
+            1, 0
+        )  # (num_events, num_posterior_samples)
 
+        posterior_path = os.path.join(self.output_path, "posterior.npy")
         memmap = open_memmap(
-            self.output_path,
+            posterior_path,
             mode="w+",
             dtype=np.float32,
             shape=(self.num_events, self.num_posterior_samples),
         )
-        memmap[:] = theta.numpy()
+        memmap[:] = theta_posterior.numpy()
         memmap.flush()
         del memmap
 
         print(
-            f"Simulated {self.num_events} events with {self.num_posterior_samples} posterior samples."
+            f"Simulated {self.num_events} events with {self.num_posterior_samples} posterior samples to {posterior_path}."
         )
-        print(f"Saved to {self.output_path}")
+
+        marginal_path = os.path.join(self.output_path, "marginal.npy")
+        memmap = open_memmap(
+            marginal_path,
+            mode="w+",
+            dtype=np.float32,
+            shape=(self.num_events,),
+        )
+        memmap[:] = theta.numpy()
+        memmap.flush()
+        del memmap
+        print(f"Saved marginal samples to {marginal_path}")

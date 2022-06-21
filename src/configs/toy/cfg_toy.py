@@ -9,6 +9,7 @@ base_args, _ = base_parser.parse_known_args()
 parser = argparse.ArgumentParser(parents=[base_parser])
 
 parser.add_argument("--train", default=False, action="store_true")
+parser.add_argument('--batch_size', default=32, type=int)
 
 dataset_cfg = dict(
     object="ToyDataset",
