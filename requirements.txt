@@ -4,3 +4,4 @@ torchaudio==0.11.0
 seaborn==0.11.2
 scikit-learn==1.1.1
 tqdm==4.64.0
+pytorch-lightning==1.6.4
