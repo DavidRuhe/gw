@@ -69,7 +69,6 @@ class NormalizingFlow(pl.LightningModule):
 
 def evaluate(dir, model, test_dataset, flow_samples=1024):
     num_samples = min(flow_samples, len(test_dataset))
-    breakpoint()
     X_test = torch.stack([test_dataset[i][0] for i in range(num_samples)])
     X_test = X_test[:, :1]
     X_flow = model.flow_dist.sample((flow_samples,)).numpy()

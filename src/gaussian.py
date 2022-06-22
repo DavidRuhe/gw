@@ -45,8 +45,6 @@ class NormalizingFlow(pl.LightningModule):
 
     def step(self, batch, batch_idx):
         (x_marginal, x_posterior) = batch
-        breakpoint()
-
         log_prob = torch.logsumexp(
             self.flow_dist.log_prob(x_posterior.reshape(-1, 1)).view(x_posterior.shape),
             dim=-1,

@@ -10,6 +10,7 @@ parser = argparse.ArgumentParser(parents=[base_parser])
 sim_cfg = dict(
     object="GaussianSimulator",
     output_path=f"/Users/druhe/Projects/gw/data/gaussian/",
+    num_posterior_samples=1024,
 )
 add_group(parser, base_args, sim_cfg, "simulator")
 
