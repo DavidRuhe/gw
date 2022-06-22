@@ -12,7 +12,7 @@ class GaussianSimulator:
         num_events=1024,
         num_posterior_samples=32768,
         dim=1,
-        mu_theta=0,
+        mu_theta=1,
         sigmasq_theta=1,
         sigmasq_x_theta=1e-4,
         F=math.pi,
@@ -41,29 +41,45 @@ class GaussianSimulator:
             + self.mu_theta / self.sigmasq_theta
         )
 
-        mu_x = self.F * self.mu_theta + self.b
-        sigmasq_x = self.sigmasq_x_theta + self.F**2 * self.sigmasq_theta
+        theta = (
+            torch.randn(self.num_events, self.dim) * self.sigmasq_theta**0.5
+            + self.mu_theta
+        )
 
-        events = torch.randn(self.num_events, self.dim) * math.sqrt(sigmasq_x) + mu_x
-        mu_theta_x = mu_theta_x(events)
+        x = (
+            mu_x_theta(theta)
+            + torch.randn(self.num_events, self.dim) * self.sigmasq_x_theta**0.5
+        )
 
-        theta = mu_theta_x + torch.randn(
+        mu_theta_x = mu_theta_x(x)
+
+        theta_posterior = mu_theta_x + torch.randn(
             self.num_events, self.num_posterior_samples
         ) * math.sqrt(sigmasq_theta_x)
 
-
+        posterior_path = os.path.join(self.output_path, "posterior.npy")
         memmap = open_memmap(
-            self.output_path,
+            posterior_path,
             mode="w+",
             dtype=np.float32,
             shape=(self.num_events, self.num_posterior_samples),
         )
-        memmap[:] = theta.numpy()
+        memmap[:] = theta_posterior.numpy()
         memmap.flush()
         del memmap
-
         print(
             f"Simulated {self.num_events} events with {self.num_posterior_samples} posterior samples."
         )
-        print(f"Saved to {self.output_path}")
+        print(f"Saved to {posterior_path}")
 
+        marginal_path = os.path.join(self.output_path, "marginal.npy")
+        memmap = open_memmap(
+            marginal_path,
+            mode="w+",
+            dtype=np.float32,
+            shape=(self.num_events, 1),
+        )
+        memmap[:] = theta.numpy()
+        memmap.flush()
+        del memmap
+        print(f"Saved marginals to {marginal_path}")
