@@ -15,11 +15,15 @@ dataset_cfg = dict(
     object="SyntheticDataset",
     path=data_path,
     fold=0,
+    limit_samples=0,
 )
 add_group(parser, base_args, dataset_cfg, "dataset")
 
 trainer_cfg = dict(max_epochs=float("inf"))
 add_group(parser, base_args, trainer_cfg, "trainer")
+
+model_cfg = dict(object="SplineCouplingFlow", objective="map", precision=2**-6)
+add_group(parser, base_args, model_cfg, "model")
 
 
 class TestConfig(unittest.TestCase):

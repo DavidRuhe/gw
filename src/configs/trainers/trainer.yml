@@ -1,0 +1,2 @@
+object: pytorch_lightning.Trainer
+max_epochs: 262144

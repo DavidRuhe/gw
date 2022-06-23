@@ -1,28 +1,25 @@
-import os
-import torch
-
-
-from pytorch_lightning import loggers, callbacks
-
+import logging
 import os
 import tempfile
 from functools import partial
-import logging
+
+import torch
+from pytorch_lightning import callbacks, loggers
 
 logging.basicConfig(level=logging.INFO)
 
+import math
+
 import matplotlib.pyplot as plt
-import pyro.distributions as dist
-import pyro.distributions.transforms as T
 import pytorch_lightning as pl
+import seaborn as sns
 import torch
 from torch.utils.data import DataLoader
-import seaborn as sns
 
 import data
+import models
 import wandb
 from configs.parse import parse_args
-import math
 
 USE_WANDB = (
     not ("WANDB_DISABLED" in os.environ)
@@ -30,41 +27,15 @@ USE_WANDB = (
 )
 
 
-class NormalizingFlow(pl.LightningModule):
-    def __init__(self, d=1):
-        super().__init__()
+def gaussian_nll(x, mu, sigma):
+    return -0.5 * torch.log(2 * math.pi * sigma**2) - (x - mu) ** 2 / (2 * sigma**2)
 
-        self.base_dist = dist.Normal(torch.zeros(d), torch.ones(d))
-        self.spline_transform = T.spline_coupling(d)
-        self.flow_dist = dist.TransformedDistribution(
-            self.base_dist, [self.spline_transform]
-        )
 
-    def configure_optimizers(self):
-        return torch.optim.Adam(self.spline_transform.parameters())
-
-    def step(self, batch, batch_idx):
-        (x_posterior,) = batch
-        log_prob = torch.logsumexp(
-            self.flow_dist.log_prob(x_posterior.reshape(-1, 1)).view(x_posterior.shape),
-            dim=-1,
-        )
-
-        log_prob = log_prob - math.log(x_posterior.shape[-1])
-
-        return -log_prob.mean()
-
-    def training_step(self, batch, batch_idx):
-        return self.step(batch, batch_idx)
-
-    def validation_step(self, batch, batch_idx):
-        loss = self.step(batch, batch_idx)
-        self.log("val_loss", loss, prog_bar=True)
-        return loss
-
-    def test_step(self, batch, batch_idx):
-        loss = self.step(batch, batch_idx)
-        return loss
+def weight_decay(weight, sigma):
+    return (
+        -0.5 * torch.log(2 * math.pi * sigma**2)
+        - 0.5 * (torch.linalg.norm(weight) / sigma).square()
+    )
 
 
 def evaluate(dir, model, test_dataset, flow_samples=1024):
@@ -204,7 +175,7 @@ def main(args):
     )
     test_loader = DataLoader(test_dataset, batch_size=args["batch_size"], shuffle=False)
 
-    model = NormalizingFlow()
+    model = getattr(models, args["model"].pop("object"))(**args["model"])
     trainer = pl.Trainer(
         **args["trainer"],
         callbacks=[callbacks.EarlyStopping(monitor="val_loss", mode="min")],
@@ -213,7 +184,7 @@ def main(args):
     )
     if args["train"]:
         trainer.fit(model, train_loader, valid_loader)
-    trainer.test(model, test_loader)
+    result = trainer.test(model, test_loader)
 
     torch.set_grad_enabled(False)
     evaluate(dir=args["dir"], model=model, test_dataset=test_dataset)

@@ -31,5 +31,6 @@ jobs:
       - name: Unittests
         run: |
           cd src/ 
-          python -m unittest configs/simulate/*.py
-          python -m unittest configs/**/*.py
+          # python -m unittest configs/simulate/*.py
+          # python -m unittest configs/**/*.py
+          python -m unittest discover

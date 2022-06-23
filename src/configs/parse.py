@@ -61,6 +61,8 @@ def parse_arg_default(default_type):
         # check if list
         if str(arg)[0] == "[" and str(arg)[-1] == "]":
             return ast.literal_eval(arg)
+        elif default_type == type(None):
+            return arg
         else:
             return default_type(arg)
 

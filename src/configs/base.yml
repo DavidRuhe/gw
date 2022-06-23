@@ -29,7 +29,4 @@
 # )
 # add_arguments(base_parser, base_cfg)
 
-
-cfg = dict(
-    seed=42,
-)
+seed: 42
