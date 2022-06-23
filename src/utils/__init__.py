@@ -4,6 +4,10 @@ import random
 import numpy as np
 
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
 def set_seed(seed: int, workers: bool = False):
     seed = int(seed)
     random.seed(seed)

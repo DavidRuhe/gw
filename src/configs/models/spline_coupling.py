@@ -1,0 +1,1 @@
+cfg = dict(object="models.spline_coupling.SplineCouplingFlow")

@@ -1,0 +1,2 @@
+object: "models.affine_autoregressive.AffineAutoregressiveFlow"
+num_layers: 8

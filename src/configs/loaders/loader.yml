@@ -1,0 +1,2 @@
+object: torch.utils.data.DataLoader
+batch_size: 1024

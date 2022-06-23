@@ -1,19 +1,34 @@
 import os
-import numpy as np
 import torch
+import numpy as np
 
 from data.utils import get_k_folds, train_test_split
 
 
+def softplus_inv(y):
+    return y + y.neg().expm1().neg().log()
+
+
 def load_data(path):
-    X = np.load(path)
-    return torch.from_numpy(X).float()
+    data = np.load(path)
+    X = data["m1"]
+    X = torch.from_numpy(X)
+
+    # X = softplus_inv(X)
+    X = torch.log(X)
+
+    X = (X - X.mean()) / X.std()
+
+    return X.float()
 
 
-class SyntheticDataset(torch.utils.data.TensorDataset):
+class M1Dataset(torch.utils.data.TensorDataset):
+    dimensionality = 1
+    hierarchical=True
+
     def __init__(self, path, split, fold=0, test_size=0.1, limit_samples=0):
 
-        conditional_path = os.path.join(path, "posterior.npy")
+        conditional_path = os.path.join(path)
         conditional_data = load_data(conditional_path)
         if limit_samples > 0:
             conditional_data = conditional_data[:limit_samples]
