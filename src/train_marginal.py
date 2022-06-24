@@ -1,4 +1,3 @@
-import logging
 import argparse
 import importlib
 import logging
@@ -10,7 +9,6 @@ from functools import partial
 
 import matplotlib.pyplot as plt
 import pandas as pd
-import pytorch_lightning as pl
 import seaborn as sns
 import torch
 import yaml
@@ -27,22 +25,6 @@ USE_WANDB = (
 
 if USE_WANDB:
     import wandb
-
-
-def evaluate(dir, model):
-
-    grid = torch.linspace(-3, 3, 256)
-    meshgrid = torch.meshgrid(grid, grid, indexing="xy")
-    x = torch.stack(meshgrid, dim=-1).reshape(-1, 2)
-    prob = model.log_prob(x).exp()
-
-    df = pd.DataFrame({"x": x[:, 0], "y": x[:, 1], "z": prob})
-    df = df.round({"x": 2, "y": 2})
-    data = df.pivot(index="x", columns="y", values="z")
-    sns.heatmap(data)
-    plt.axis('off')
-    plt.tight_layout()
-    plt.savefig(os.path.join(dir, "heatmap.png"), bbox_inches='tight')
 
 
 def main(config):
@@ -84,8 +66,16 @@ def main(config):
         trainer.fit(model, train_loader, valid_loader)
     trainer.test(model, test_loader)
 
-    with torch.no_grad():
-        evaluate(config["dir"], model)
+    # Evaluation
+    if "evaluation" in config:
+        evaluation_config = config["evaluation"]
+        for evaluation in config["evaluation"]:
+            object_from_config(evaluation_config, evaluation)(
+                dir=config['dir'],
+                dataloader=test_loader,
+                model=model,
+                **evaluation_config[evaluation],
+            )
 
 
 def load_object(object):
@@ -149,6 +139,16 @@ if __name__ == "__main__":
     )
     trainer_config = load_yaml(trainer_config_path)
     add_group(parser, base_args, trainer_config, "trainer")
+
+    evaluation_config_paths = pop_config_from_sys_argv("-E", default="")
+    evaluation_config_paths = evaluation_config_paths.split(",")
+
+    for path in evaluation_config_paths:
+        if len(path) == 0:
+            continue
+        name, ext = os.path.splitext(os.path.basename(path))
+        evaluation_config = load_yaml(path)
+        add_group(parser, base_args, evaluation_config, f"evaluation.{name}")
 
     args = parser.parse_args()
     config = unflatten(vars(args))
