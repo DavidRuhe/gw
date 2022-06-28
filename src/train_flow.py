@@ -12,7 +12,8 @@ import yaml
 from pytorch_lightning import callbacks, loggers
 
 from configs.parse import add_arguments, add_group, unflatten
-from utils import set_seed
+from models.flow_marginal import NormalizingFlow
+from utils import count_parameters, set_seed
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,7 +27,11 @@ if USE_WANDB:
 
 def main(config):
 
-    dataset = partial(object_from_config(config, "dataset"), **config.pop("dataset"), hierarchical=False)
+    dataset = partial(
+        object_from_config(config, "dataset"),
+        **config.pop("dataset"),
+        hierarchical=False,
+    )
     train_dataset = dataset(split="train")
     valid_dataset = dataset(split="valid")
     test_dataset = dataset(split="test")
@@ -37,29 +42,37 @@ def main(config):
     test_loader = loader(test_dataset, shuffle=False)
 
     ckpt = config.pop("ckpt")
+    flow = object_from_config(config, "flow")(**config.pop("flow"))
+
     model_object = object_from_config(config, "model")
+
     if ckpt is not None:
         model = model_object.load_from_checkpoint(ckpt)
     else:
-        model = model_object(
-            **config.pop("model"),
-            input_dim=train_dataset.dimensionality,
-        )
+        model = model_object(train_dataset.dimensionality, flow, **config.pop("model"))
+
+    print(f"Parameters: {count_parameters(model)}")
 
     checkpoint = callbacks.ModelCheckpoint(
         monitor="val_loss", mode="min", dirpath=config["dir"]
     )
+    earlystop = callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=256
+    )
 
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),
-        callbacks=[checkpoint],
+        callbacks=[checkpoint, earlystop],
         # logger=loggers.CSVLogger(config["dir"]),
         deterministic=True,
     )
 
     if config["train"]:
         trainer.fit(model, train_loader, valid_loader)
-        trainer.test(model, test_loader, ckpt_path='best')
+        (result,) = trainer.test(model, valid_loader, ckpt_path="best")
+        assert result["loss"] == checkpoint.best_model_score.item()
+        (result,) = trainer.test(model, test_loader, ckpt_path="best")
     else:
         trainer.test(model, test_loader)
 
@@ -73,6 +86,8 @@ def main(config):
                 model=model,
                 **evaluation_config[evaluation],
             )
+
+    return result
 
 
 def load_object(object):
@@ -113,6 +128,13 @@ def pop_configs_from_sys_argv(key, default=None):
     return config_files
 
 
+def command_from_config(config):
+    cmd = f"python {__file__} "
+    for key, value in config.items():
+        cmd += f"--{key}={value} "
+    return cmd
+
+
 if __name__ == "__main__":
 
     base_parser = argparse.ArgumentParser(add_help=False)
@@ -134,9 +156,15 @@ if __name__ == "__main__":
     loader_config = load_yaml(loader_config_path)
     add_group(parser, base_args, loader_config, "loader")
 
-    (model_config_path,) = pop_configs_from_sys_argv("-M")
+    (model_config_path,) = pop_configs_from_sys_argv(
+        "-M", default=["configs/models/flow_marginal.yml"]
+    )
     model_config = load_yaml(model_config_path)
     add_group(parser, base_args, model_config, "model")
+
+    (flow_config_path,) = pop_configs_from_sys_argv("-F")
+    flow_config = load_yaml(flow_config_path)
+    add_group(parser, base_args, flow_config, "flow")
 
     (trainer_config_path,) = pop_configs_from_sys_argv(
         "-T", default=["configs/trainers/trainer.yml"]
@@ -152,18 +180,26 @@ if __name__ == "__main__":
         add_group(parser, base_args, evaluation_config, f"evaluation.{name}")
 
     args = parser.parse_args()
+
     config = unflatten(vars(args))
     set_seed(config["seed"])
 
     exception = None
     with tempfile.TemporaryDirectory() as tmpdir:
         config["dir"] = tmpdir
+        config["command"] = command_from_config(vars(args))
+
         if USE_WANDB:
             wandb.init(config=args)
         try:
-            main(config)
-        except (Exception, KeyboardInterrupt) as e:
+            result = main(config)
+            config = {**config, **result}
+        except Exception as e:
             exception = e
+
+        # Save config
+        with open(os.path.join(tmpdir, "config.yml"), "w") as f:
+            yaml.dump(config, f, default_flow_style=False)
 
         if USE_WANDB:
             wandb.finish()

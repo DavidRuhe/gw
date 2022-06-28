@@ -1,0 +1,3 @@
+# object: "pyro.distributions.transforms.spline_coupling"
+object: "models.spline_coupling.spline_coupling"
+input_dim: 2

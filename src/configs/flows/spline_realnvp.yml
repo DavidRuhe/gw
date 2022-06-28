@@ -1,0 +1,4 @@
+object: "models.spline_realnvp.spline_realnvp"
+num_transforms: 2
+count_bins: 4
+input_dim: 2

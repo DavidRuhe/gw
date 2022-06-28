@@ -13,7 +13,7 @@ def load_data(path):
     data = np.load(path)
     M1 = data["m1"]
     M2 = data["m2"]
-    return torch.from_numpy(M1), torch.from_numpy(M2)
+    return torch.from_numpy(M1).float(), torch.from_numpy(M2).float()
 
 
 class M1M2Dataset(torch.utils.data.TensorDataset):
@@ -27,14 +27,14 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
         M1, M2 = load_data(path)
 
         if not hierarchical:
-            M1 = M1.mean(dim=-1)
-            M2 = M2.mean(dim=-1)
-
-        self.normalization_parameters = {}
-        M1 = self.normalize_forward(M1, "M1").float()
-        M2 = self.normalize_forward(M2, "M2").float()
+            # M1 = M1.mean(dim=-1)
+            # M2 = M2.mean(dim=-1)
+            M1 = M1[:, 0]
+            M2 = M2[:, 0]
 
         data = torch.stack([M1, M2], dim=-1)
+        self.loc, self.scale = None, None
+        data = self.normalize_forward(data)
 
         if limit_samples > 0:
             data = data[:limit_samples]
@@ -57,18 +57,16 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
         elif split == "test":
             super().__init__(self.test_data)
 
-    def normalize_forward(self, x, key):
-        x_log = x.log()
-        if key in self.normalization_parameters:
-            loc, scale = self.normalization_parameters[key]
-            return (x_log - loc) / scale
+    def normalize_forward(self, x):
+        # x_log = x.log()
+        x_log = softplus_inv(x)
+        if self.loc is None and self.scale is None:
+            self.loc, self.scale = x_log.mean(dim=0, keepdim=True), x_log.std(dim=0, keepdim=True)
+            return self.normalize_forward(x)
         else:
-            self.normalization_parameters[key] = (x_log.mean(), x_log.std())
-            return self.normalize_forward(x, key)
+            return (x_log - self.loc) / self.scale
 
-    def normalize_inverse(self, y, key):
-        assert (
-            key in self.normalization_parameters
-        ), f"Normalization for {key} unknown. First run forward normalization."
-        loc, scale = self.normalization_parameters[key]
-        return torch.exp(y * scale + loc)
+    def normalize_inverse(self, y):
+        # y = torch.nn.functional.softplus(y)
+        # return torch.exp(y * self.scale + self.loc)
+        return torch.nn.functional.softplus(y * self.scale + self.loc)

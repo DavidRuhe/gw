@@ -1,0 +1,2 @@
+object: models.flow_marginal.NormalizingFlow
+lr: 1.e-2

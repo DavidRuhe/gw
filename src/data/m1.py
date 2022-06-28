@@ -13,42 +13,53 @@ def load_data(path):
     data = np.load(path)
     X = data["m1"]
     X = torch.from_numpy(X)
-
-    # X = softplus_inv(X)
-    X = torch.log(X)
-
-    X = (X - X.mean()) / X.std()
-
     return X.float()
 
 
 class M1Dataset(torch.utils.data.TensorDataset):
     dimensionality = 1
-    hierarchical=True
 
-    def __init__(self, path, split, fold=0, test_size=0.1, limit_samples=0):
+    def __init__(
+        self, path, split, fold=0, test_size=0.1, limit_samples=0, hierarchical=False
+    ):
 
-        conditional_path = os.path.join(path)
-        conditional_data = load_data(conditional_path)
-        if limit_samples > 0:
-            conditional_data = conditional_data[:limit_samples]
-        self.conditional_data = conditional_data
+        data = load_data(path)
+        if not hierarchical:
+            data = data[:, :1]
 
-        self.test_data, self.train_data = train_test_split(
-            self.conditional_data, test_fraction=test_size
+        self.loc, self.scale = None, None
+        data = self.normalize_forward(data)
+
+        (self.test_data,), (self.train_data,) = train_test_split(
+            data, test_fraction=test_size
         )
-        folds = get_k_folds(self.train_data[0], 5)
+        folds = get_k_folds(self.train_data, 5)
         fold_indices = folds[fold]
         valid_indices, train_indices = fold_indices
 
-        (train_conditional_data,) = self.train_data
         if split == "train":
             super().__init__(
-                train_conditional_data[train_indices],
+                self.train_data[train_indices],
             )
         elif split == "valid":
             super().__init__(
-                train_conditional_data[valid_indices],
+                self.train_data[valid_indices],
             )
         elif split == "test":
-            super().__init__(*self.test_data)
+            super().__init__(self.test_data)
+
+    def normalize_forward(self, x):
+        # x_log = x.log()
+        x_log = softplus_inv(x)
+        if self.loc is None and self.scale is None:
+            self.loc, self.scale = x_log.mean(dim=0, keepdim=True), x_log.std(
+                dim=0, keepdim=True
+            )
+            return self.normalize_forward(x)
+        else:
+            return (x_log - self.loc) / self.scale
+
+    def normalize_inverse(self, y):
+        # y = torch.nn.functional.softplus(y)
+        # return torch.exp(y * self.scale + self.loc)
+        return torch.nn.functional.softplus(y * self.scale + self.loc)
