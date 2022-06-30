@@ -55,10 +55,7 @@ def main(config):
     checkpoint = callbacks.ModelCheckpoint(
         monitor="val_loss", mode="min", dirpath=config["dir"]
     )
-    earlystop = callbacks.EarlyStopping(
-        monitor="val_loss",
-        patience=256
-    )
+    earlystop = callbacks.EarlyStopping(monitor="val_loss", patience=16)
 
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),
@@ -181,7 +178,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = unflatten(vars(args))
-    print('\n\n', yaml.dump(config, default_flow_style=False), '\n\n')
+    print("\n\n", yaml.dump(config, default_flow_style=False), "\n\n")
     set_seed(config["seed"])
 
     exception = None

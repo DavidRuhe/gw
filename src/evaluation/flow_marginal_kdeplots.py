@@ -14,7 +14,7 @@ def marginal_kdeplots(dir, model, dataset, keys=None, num_flow_samples=1024):
     # x_dataset = dataset.normalize_inverse(x_dataset)
     x_flow = dataset.normalize_inverse(x_flow)
 
-    for d in range(x_dataset.shape[1]):
+    for d in range(x_flow.shape[1]):
         if keys is not None:
             key = keys[d]
         else:

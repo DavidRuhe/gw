@@ -29,12 +29,16 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
         if not hierarchical:
             # M1 = M1.mean(dim=-1)
             # M2 = M2.mean(dim=-1)
-            M1 = M1[:, :256]
-            M2 = M2[:, :256]
+            ix = torch.arange(0, 30000, 1)[torch.randperm(30000)][:2048]
+            # ix = torch.randint(0, 30000, (2048,))
+            M1 = M1[:, ix]
+            M2 = M2[:, ix]
 
         data = torch.stack([M1, M2], dim=-1)
         self.loc, self.scale = None, None
-        data = self.normalize_forward(data.view(-1, self.dimensionality)).view(data.shape)
+        data = self.normalize_forward(data.view(-1, self.dimensionality)).view(
+            data.shape
+        )
 
         if limit_samples > 0:
             data = data[:limit_samples]
@@ -58,15 +62,18 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
             super().__init__(self.test_data)
 
     def normalize_forward(self, x):
-        x_log = softplus_inv(x)
+        # x_log = softplus_inv(x)
+        # x_log = x.log()
         if self.loc is None and self.scale is None:
 
-            self.loc, self.scale = x_log.mean(dim=0, keepdim=True), x_log.std(dim=0, keepdim=True)
+            self.loc, self.scale = x.mean(dim=0, keepdim=True), x.std(
+                dim=0, keepdim=True
+            )
             return self.normalize_forward(x)
         else:
-            return (x_log - self.loc) / self.scale
+            return (x - self.loc) / self.scale
 
     def normalize_inverse(self, y):
         # y = torch.nn.functional.softplus(y)
-        # return torch.exp(y * self.scale + self.loc)
-        return torch.nn.functional.softplus(y * self.scale + self.loc)
+        # y = torch.exp(y)
+        return y * self.scale + self.loc
