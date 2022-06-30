@@ -29,12 +29,12 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
         if not hierarchical:
             # M1 = M1.mean(dim=-1)
             # M2 = M2.mean(dim=-1)
-            M1 = M1[:, 0]
-            M2 = M2[:, 0]
+            M1 = M1[:, :256]
+            M2 = M2[:, :256]
 
         data = torch.stack([M1, M2], dim=-1)
         self.loc, self.scale = None, None
-        data = self.normalize_forward(data)
+        data = self.normalize_forward(data.view(-1, self.dimensionality)).view(data.shape)
 
         if limit_samples > 0:
             data = data[:limit_samples]
@@ -58,9 +58,9 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
             super().__init__(self.test_data)
 
     def normalize_forward(self, x):
-        # x_log = x.log()
         x_log = softplus_inv(x)
         if self.loc is None and self.scale is None:
+
             self.loc, self.scale = x_log.mean(dim=0, keepdim=True), x_log.std(dim=0, keepdim=True)
             return self.normalize_forward(x)
         else:

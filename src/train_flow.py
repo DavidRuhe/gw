@@ -30,7 +30,6 @@ def main(config):
     dataset = partial(
         object_from_config(config, "dataset"),
         **config.pop("dataset"),
-        hierarchical=False,
     )
     train_dataset = dataset(split="train")
     valid_dataset = dataset(split="valid")
@@ -74,7 +73,7 @@ def main(config):
         assert result["loss"] == checkpoint.best_model_score.item()
         (result,) = trainer.test(model, test_loader, ckpt_path="best")
     else:
-        trainer.test(model, test_loader)
+        (result,) = trainer.test(model, test_loader)
 
     # Evaluation
     if "evaluation" in config:
@@ -182,6 +181,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     config = unflatten(vars(args))
+    print('\n\n', yaml.dump(config, default_flow_style=False), '\n\n')
     set_seed(config["seed"])
 
     exception = None
