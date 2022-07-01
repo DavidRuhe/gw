@@ -127,15 +127,21 @@ def add_group(parser, base_args, cfg, group_name):
 
     group = parser.add_argument_group(group_name)
     for k, v in cfg.items():
-        help = None
+        # help = None
         if k in base_args:
-            help = argparse.SUPPRESS
+            # help = argparse.SUPPRESS
+            default = base_args[k]
+        else:
+            default = v
+
+        help = f"Default: {v}"
 
         group.add_argument(
             f"--{group_name}." + k,
             type=parse_arg_default(type(v)),
-            default=v,
+            default=default,
             help=help,
+            required=v is None
         )
 
 

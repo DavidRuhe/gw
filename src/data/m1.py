@@ -20,7 +20,7 @@ class M1Dataset(torch.utils.data.TensorDataset):
     dimensionality = 1
 
     def __init__(
-        self, path, split, fold=0, test_size=0.1, limit_samples=0, hierarchical=False
+        self, path, split, fold=0, test_size=0.1, limit_samples=0, hierarchical=True
     ):
 
         data = load_data(path)
@@ -49,8 +49,7 @@ class M1Dataset(torch.utils.data.TensorDataset):
             super().__init__(self.test_data)
 
     def normalize_forward(self, x):
-        # x_log = x.log()
-        x_log = softplus_inv(x)
+        x_log = x
         if self.loc is None and self.scale is None:
             self.loc, self.scale = x_log.mean(dim=0, keepdim=True), x_log.std(
                 dim=0, keepdim=True
@@ -60,6 +59,7 @@ class M1Dataset(torch.utils.data.TensorDataset):
             return (x_log - self.loc) / self.scale
 
     def normalize_inverse(self, y):
+        y = y * self.scale + self.loc
         # y = torch.nn.functional.softplus(y)
-        # return torch.exp(y * self.scale + self.loc)
-        return torch.nn.functional.softplus(y * self.scale + self.loc)
+        # y = torch.exp(y)
+        return y

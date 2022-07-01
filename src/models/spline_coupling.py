@@ -112,7 +112,7 @@ from nn.dense_nn import DenseNN
 
 
 def spline_coupling(
-    input_dim, split_dim=None, hidden_dims=None, count_bins=8, bound=3.0
+    input_dim, split_dim=None, hidden_dims=None, count_bins=8, bound=3.0, num_layers=1
 ):
     """
     A helper function to create a
@@ -141,4 +141,5 @@ def spline_coupling(
         ],
     )
 
-    return T.SplineCoupling(input_dim, split_dim, nn, count_bins, bound)
+    # return [T.SplineCoupling(input_dim, split_dim, nn, count_bins, bound)]
+    return [T.spline_coupling(input_dim)]

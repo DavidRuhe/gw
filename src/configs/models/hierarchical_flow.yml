@@ -1,0 +1,2 @@
+object: models.normalizing_flow.HierarchicalNormalizingFlow
+lr: 0.005

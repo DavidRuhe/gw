@@ -1,0 +1,2 @@
+object: "pyro.distributions.transforms.spline_autoregressive"
+input_dim: 1

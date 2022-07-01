@@ -6,13 +6,11 @@ import shutil
 import sys
 import tempfile
 from functools import partial
-import torch
+from pytorch_lightning import callbacks
 
 import yaml
-from pytorch_lightning import callbacks, loggers
 
 from configs.parse import add_arguments, add_group, unflatten
-from models.flow_marginal import NormalizingFlow
 from utils import count_parameters, set_seed
 
 logging.basicConfig(level=logging.INFO)
@@ -40,22 +38,24 @@ def main(config):
     valid_loader = loader(valid_dataset, shuffle=False)
     test_loader = loader(test_dataset, shuffle=False)
 
-    ckpt = config.pop("ckpt")
-    flow = object_from_config(config, "flow")(**config.pop("flow"))
-
+    # ckpt = config.pop("ckpt")
+    ckpt = None
+    flows = object_from_config(config, "flow")(**config.pop("flow"))
     model_object = object_from_config(config, "model")
 
     if ckpt is not None:
         model = model_object.load_from_checkpoint(ckpt)
     else:
-        model = model_object(train_dataset.dimensionality, flow, **config.pop("model"))
+        model = model_object(
+            flows=flows, **config.pop("model"), d=train_dataset.dimensionality
+        )
 
     print(f"Parameters: {count_parameters(model)}")
 
     checkpoint = callbacks.ModelCheckpoint(
         monitor="val_loss", mode="min", dirpath=config["dir"]
     )
-    earlystop = callbacks.EarlyStopping(monitor="val_loss", patience=16)
+    earlystop = callbacks.EarlyStopping(monitor="val_loss", patience=1)
 
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),
@@ -66,8 +66,9 @@ def main(config):
 
     if config["train"]:
         trainer.fit(model, train_loader, valid_loader)
-        (result,) = trainer.test(model, valid_loader, ckpt_path="best")
-        assert result["loss"] == checkpoint.best_model_score.item()
+        (result,) = trainer.validate(model, valid_loader, ckpt_path="best")
+        if "val_loss" in result:
+            assert result["val_loss"] == checkpoint.best_model_score.item()
         (result,) = trainer.test(model, test_loader, ckpt_path="best")
     else:
         (result,) = trainer.test(model, test_loader)
@@ -116,7 +117,6 @@ def pop_configs_from_sys_argv(key, default=None):
             if index == len(argv) - 1:
                 break
         sys.argv = sys.argv[:start_index] + sys.argv[index + 1 :]
-
     elif default is not None:
         config_files = default
     else:
@@ -132,53 +132,54 @@ def command_from_config(config):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train", action="store_true")
 
-    base_parser = argparse.ArgumentParser(add_help=False)
-    base_parser.add_argument("--train", action="store_true", default=False)
-    base_parser.add_argument("--ckpt", type=str, default=None)
-    base_config = load_yaml("configs/base.yml")
-    add_arguments(base_parser, base_config)
-    base_args, _ = base_parser.parse_known_args()
-
-    parser = argparse.ArgumentParser(parents=[base_parser])
+    (run_config_path,) = pop_configs_from_sys_argv("-C", default=["configs/base.yml"])
+    run_config = load_yaml(run_config_path)
+    add_arguments(parser, run_config)
 
     (data_config_path,) = pop_configs_from_sys_argv("-D")
     data_config = load_yaml(data_config_path)
-    add_group(parser, base_args, data_config, "dataset")
+    run_args = run_config["dataset"] if "dataset" in run_config else {}
+    add_group(parser, run_args, data_config, "dataset")
 
     (loader_config_path,) = pop_configs_from_sys_argv(
         "-L", default=["configs/loaders/loader.yml"]
     )
+    run_args = run_config["loader"] if "loader" in run_config else {}
     loader_config = load_yaml(loader_config_path)
-    add_group(parser, base_args, loader_config, "loader")
+    add_group(parser, run_args, loader_config, "loader")
 
     (model_config_path,) = pop_configs_from_sys_argv(
         "-M", default=["configs/models/flow_marginal.yml"]
     )
+    run_args = run_config["model"] if "model" in run_config else {}
     model_config = load_yaml(model_config_path)
-    add_group(parser, base_args, model_config, "model")
+    add_group(parser, run_args, model_config, "model")
 
     (flow_config_path,) = pop_configs_from_sys_argv("-F")
+    run_args = run_config["flow"] if "flow" in run_config else {}
     flow_config = load_yaml(flow_config_path)
-    add_group(parser, base_args, flow_config, "flow")
+    add_group(parser, run_args, flow_config, "flow")
 
     (trainer_config_path,) = pop_configs_from_sys_argv(
         "-T", default=["configs/trainers/trainer.yml"]
     )
+    run_args = run_config["trainer"] if "trainer" in run_config else {}
     trainer_config = load_yaml(trainer_config_path)
-    add_group(parser, base_args, trainer_config, "trainer")
+    add_group(parser, run_args, trainer_config, "trainer")
 
     evaluation_config_paths = pop_configs_from_sys_argv("-E", default=[])
 
     for path in evaluation_config_paths:
         name, ext = os.path.splitext(os.path.basename(path))
         evaluation_config = load_yaml(path)
-        add_group(parser, base_args, evaluation_config, f"evaluation.{name}")
+        add_group(parser, run_args, evaluation_config, f"evaluation.{name}")
 
     args = parser.parse_args()
-
     config = unflatten(vars(args))
-    print("\n\n", yaml.dump(config, default_flow_style=False), "\n\n")
+    print("\n", yaml.dump(config, default_flow_style=False), "\n")
     set_seed(config["seed"])
 
     exception = None
@@ -190,7 +191,8 @@ if __name__ == "__main__":
             wandb.init(config=args)
         try:
             result = main(config)
-            config = {**config, **result}
+            if result is not None:
+                config = {**config, **result}
         except Exception as e:
             exception = e
 

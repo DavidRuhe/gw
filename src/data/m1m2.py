@@ -62,8 +62,10 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
             super().__init__(self.test_data)
 
     def normalize_forward(self, x):
-        # x_log = softplus_inv(x)
+        x_log = softplus_inv(x)
         # x_log = x.log()
+        # x_log = x
+
         if self.loc is None and self.scale is None:
 
             self.loc, self.scale = x.mean(dim=0, keepdim=True), x.std(
@@ -75,5 +77,5 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
 
     def normalize_inverse(self, y):
         # y = torch.nn.functional.softplus(y)
-        # y = torch.exp(y)
+        y = torch.softplus(y)
         return y * self.scale + self.loc

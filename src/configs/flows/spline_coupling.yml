@@ -1,3 +1,2 @@
 object: "models.spline_coupling.spline_coupling"
-input_dim: 2
-count_bins: 8
+input_dim: 1
