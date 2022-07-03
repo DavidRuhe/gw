@@ -1,0 +1,16 @@
+# Should be first line.
+command: python train_flow.py -D configs/data/m1m2.yml -F configs/flows/spline_coupling.yml -M configs/models/hierarchical_flow.yml -E configs/evaluation/flow_marginals.yml configs/evaluation/flow_2d_kde.yml
+
+seed: 42
+model:
+  lr: 0.01
+
+loader:
+  batch_size: 4
+trainer:
+  min_epochs: 5
+flow:
+  input_dim: 2
+  count_bins: 8
+
+# Min epochs 16 lr 0.01 gave good test loss.

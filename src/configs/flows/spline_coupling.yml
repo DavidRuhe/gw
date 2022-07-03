@@ -1,2 +1,4 @@
+# object: "pyro.distributions.transforms.spline_coupling"
 object: "models.spline_coupling.spline_coupling"
 input_dim: 1
+count_bins: 8

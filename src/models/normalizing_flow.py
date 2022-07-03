@@ -16,9 +16,13 @@ class NormalizingFlow(pl.LightningModule):
         self.flow_dist = dist.TransformedDistribution(self.base_dist, flows)
         self.lr = lr
         if isinstance(flows, Iterable):
-            self.trainable_flows =  nn.ModuleList([flow for flow in self.flows if isinstance(flow, nn.Module)])
+            self.trainable_flows = nn.ModuleList(
+                [flow for flow in self.flows if isinstance(flow, nn.Module)]
+            )
         else:
             self.trainable_flows = flows
+
+        self.d = d
 
     def parameters(self):
         return self.trainable_flows.parameters()
@@ -26,8 +30,22 @@ class NormalizingFlow(pl.LightningModule):
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
-    def log_prob(self, x):
-        return self.flow_dist.log_prob(x)
+    # def log_prob(self, x):
+    #     return self.flow_dist.log_prob(x)
+
+    def log_prob(self, x, return_y=False):
+        x = x.clone()
+        J = 0
+        for t in self.flows:
+            y = t(x)
+            J += t.log_abs_det_jacobian(x, y)
+            x = y
+        log_prob = self.base_dist.log_prob(x).squeeze() + J
+
+        if return_y:
+            return log_prob, x
+        else:
+            return log_prob
 
     def step(self, batch, batch_idx):
         (x,) = batch
@@ -47,6 +65,8 @@ class NormalizingFlow(pl.LightningModule):
         loss = self.step(batch, batch_idx)
         self.log("test_loss", loss, prog_bar=True)
         return loss
+
+
 # class NormalizingFlow(pl.LightningModule):
 #     def __init__(self, flows,lr,  d=1):
 #         super().__init__()
@@ -85,8 +105,6 @@ class NormalizingFlow(pl.LightningModule):
 #         return loss
 
 
-
-
 class HierarchicalNormalizingFlow(NormalizingFlow):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -94,11 +112,17 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
     def step(self, batch, batch_idx):
         (x,) = batch
 
+        # x_sq = x.squeeze(-1)
+        # log_prob = torch.logsumexp(
+        #     self.flow_dist.log_prob(x_sq.reshape(-1, 1)).view(x_sq.shape),
+        #     dim=-1,
+        # )
+        # log_prob_ = log_prob - math.log(x_sq.shape[-1])
+
         log_prob = torch.logsumexp(
-            self.flow_dist.log_prob(x.reshape(-1, 1)).view(x.shape),
+            self.log_prob(x.reshape(-1, self.d)).view(x.shape[:-1]),
             dim=-1,
         )
-
-        log_prob = log_prob - math.log(x.shape[-1])
+        log_prob = log_prob - math.log(x.shape[1])
 
         return -log_prob.mean()

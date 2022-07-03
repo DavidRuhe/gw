@@ -14,16 +14,42 @@ function parse_yaml {
       for (i in vname) {if (i > indent) {delete vname[i]}}
       if (length($3) > 0) {
          vn=""; for (i=0; i<indent; i++) {vn=(vn)(vname[i])(".")}
-         printf("--%s%s%s=\"%s\"\n", "'$prefix'",vn, $2, $3);
+         printf("--%s%s%s=%s\n", "'$prefix'",vn, $2, $3);
       }
    }'
 }
 
 args=$(parse_yaml $1)
-tmp=${args#*\"}        # Remove everything up to and including first "
-runfile=${tmp%%\"*}    # Remove the first " and everything following it
-python_args=${tmp#*\"} # Remove everything up to second "
+tmp=${args#*\=}        # Remove everything up to and including first "
+runfile=${tmp%%\-\-*}    # Remove the first -- and everything following it
+# python_args=--${tmp#*\-\-} # Remove everything up to second "
+
 clargs="$*"
+# prefix=${clargs%%\-\-*}    # Remove the first -- and everything following it
+# python_clargs=${clargs#"$prefix"}
+
+# echo $runfile
+# echo $python_args
+
 # echo "Running..."
 # echo $runfile -C $clargs $python_args
-eval $runfile -C $clargs $python_args
+# eval $runfile -C $clargs $python_args
+
+# python_args=($python_args)
+
+# for kv in "${python_args[@]}"; do
+#     echo $kv
+#     kvarr=(${kv//=/ })
+#     k=${kvarr[0]}
+#     if [[ "$clargs" == *"$k"* ]]; then
+#         echo "Manually setting $kv"
+#     else 
+#         clargs="$clargs $kv"
+    # fi
+# done
+
+# echo $runfile
+# echo $clargs
+
+echo $runfile -C $clargs
+eval $runfile -C $clargs

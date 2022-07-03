@@ -1,2 +1,3 @@
 object: "data.m1.M1Dataset"
 path: "/Users/druhe/Projects/gw/MLPopulation/data/Combined_GWTC_m1m2chieffz.npz"
+fold: 0 

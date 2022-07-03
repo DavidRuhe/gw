@@ -23,6 +23,26 @@ if USE_WANDB:
     import wandb
 
 
+class EvaluationLoop(callbacks.Callback):
+    def __init__(self, evaluation_config, dataset, model, dir):
+        self.evaluation_config = evaluation_config
+        self.dataset = dataset
+        self.model = model
+        self.dir = dir
+        self.evaluations = [object_from_config(evaluation_config, evaluation) for evaluation in evaluation_config]
+
+    def on_epoch_end(self, trainer, model):
+        dir = os.path.join(self.dir, f"epoch_{trainer.current_epoch}")
+        os.makedirs(dir, exist_ok=True)
+        for evaluation in self.evaluations:
+            evaluation(
+                dir=dir,
+                dataset=self.dataset,
+                model=self.model,
+                **self.evaluation_config[evaluation.__name__],
+            )
+
+
 def main(config):
 
     dataset = partial(
@@ -56,10 +76,16 @@ def main(config):
         monitor="val_loss", mode="min", dirpath=config["dir"]
     )
     earlystop = callbacks.EarlyStopping(monitor="val_loss", patience=1)
+    evaluate = EvaluationLoop(
+        evaluation_config=config["evaluation"],
+        dataset=test_dataset,
+        model=model,
+        dir=config["dir"],
+    )
 
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),
-        callbacks=[checkpoint, earlystop],
+        callbacks=[checkpoint, earlystop, evaluate],
         # logger=loggers.CSVLogger(config["dir"]),
         deterministic=True,
     )
@@ -72,17 +98,6 @@ def main(config):
         (result,) = trainer.test(model, test_loader, ckpt_path="best")
     else:
         (result,) = trainer.test(model, test_loader)
-
-    # Evaluation
-    if "evaluation" in config:
-        evaluation_config = config["evaluation"]
-        for evaluation in config["evaluation"]:
-            object_from_config(evaluation_config, evaluation)(
-                dir=config["dir"],
-                dataset=test_dataset,
-                model=model,
-                **evaluation_config[evaluation],
-            )
 
     return result
 
@@ -176,6 +191,7 @@ if __name__ == "__main__":
         name, ext = os.path.splitext(os.path.basename(path))
         evaluation_config = load_yaml(path)
         add_group(parser, run_args, evaluation_config, f"evaluation.{name}")
+        print(path)
 
     args = parser.parse_args()
     config = unflatten(vars(args))

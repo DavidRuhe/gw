@@ -27,10 +27,7 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
         M1, M2 = load_data(path)
 
         if not hierarchical:
-            # M1 = M1.mean(dim=-1)
-            # M2 = M2.mean(dim=-1)
-            ix = torch.arange(0, 30000, 1)[torch.randperm(30000)][:2048]
-            # ix = torch.randint(0, 30000, (2048,))
+            ix = torch.arange(0, 30000, 1)[torch.randperm(30000)][:1]
             M1 = M1[:, ix]
             M2 = M2[:, ix]
 
@@ -62,9 +59,9 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
             super().__init__(self.test_data)
 
     def normalize_forward(self, x):
-        x_log = softplus_inv(x)
+        # x_log = softplus_inv(x)
         # x_log = x.log()
-        # x_log = x
+        x_log = x
 
         if self.loc is None and self.scale is None:
 
@@ -76,6 +73,7 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
             return (x - self.loc) / self.scale
 
     def normalize_inverse(self, y):
+        y = y * self.scale + self.loc
         # y = torch.nn.functional.softplus(y)
-        y = torch.softplus(y)
-        return y * self.scale + self.loc
+        # y = torch.softplus(y)
+        return y

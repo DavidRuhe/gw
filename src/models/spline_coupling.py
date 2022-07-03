@@ -2,9 +2,11 @@
 
 # import pyro.distributions as dist
 import pyro.distributions.transforms as T
+
 # import pytorch_lightning as pl
 # import torch
 from nn.dense_nn import DenseNN
+
 # from torch import nn
 
 # from utils import count_parameters
@@ -112,7 +114,10 @@ from nn.dense_nn import DenseNN
 
 
 def spline_coupling(
-    input_dim, split_dim=None, hidden_dims=None, count_bins=8, bound=3.0, num_layers=1
+    input_dim,
+    *args,
+    num_layers=1,
+    **kwargs,
 ):
     """
     A helper function to create a
@@ -123,23 +128,5 @@ def spline_coupling(
     :type input_dim: int
 
     """
-
-    if split_dim is None:
-        split_dim = input_dim // 2
-
-    if hidden_dims is None:
-        hidden_dims = [input_dim * 10, input_dim * 10]
-
-    nn = DenseNN(
-        split_dim,
-        hidden_dims,
-        param_dims=[
-            (input_dim - split_dim) * count_bins,
-            (input_dim - split_dim) * count_bins,
-            (input_dim - split_dim) * (count_bins - 1),
-            (input_dim - split_dim) * count_bins,
-        ],
-    )
-
     # return [T.SplineCoupling(input_dim, split_dim, nn, count_bins, bound)]
-    return [T.spline_coupling(input_dim)]
+    return [T.spline_coupling(input_dim, *args, **kwargs) for _ in range(num_layers)]
