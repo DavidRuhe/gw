@@ -1,3 +1,5 @@
 object: pytorch_lightning.Trainer
 max_epochs: 262144
 min_epochs: 1
+earlystopping:
+    patience: 1

@@ -10,7 +10,7 @@ from pytorch_lightning import callbacks
 
 import yaml
 
-from configs.parse import add_arguments, add_group, unflatten
+from configs.parse import add_arguments, add_group, flatten, unflatten
 from utils import count_parameters, set_seed
 
 logging.basicConfig(level=logging.INFO)
@@ -29,17 +29,21 @@ class EvaluationLoop(callbacks.Callback):
         self.dataset = dataset
         self.model = model
         self.dir = dir
-        self.evaluations = [object_from_config(evaluation_config, evaluation) for evaluation in evaluation_config]
+        self.evaluations = {
+            evaluation: object_from_config(evaluation_config, evaluation)
+            for evaluation in evaluation_config
+        }
 
     def on_epoch_end(self, trainer, model):
         dir = os.path.join(self.dir, f"epoch_{trainer.current_epoch}")
         os.makedirs(dir, exist_ok=True)
-        for evaluation in self.evaluations:
+
+        for k, evaluation in self.evaluations.items():
             evaluation(
                 dir=dir,
                 dataset=self.dataset,
                 model=self.model,
-                **self.evaluation_config[evaluation.__name__],
+                **self.evaluation_config[k],
             )
 
 
@@ -75,7 +79,9 @@ def main(config):
     checkpoint = callbacks.ModelCheckpoint(
         monitor="val_loss", mode="min", dirpath=config["dir"]
     )
-    earlystop = callbacks.EarlyStopping(monitor="val_loss", patience=1)
+    earlystop = callbacks.EarlyStopping(
+        monitor="val_loss", **config["trainer"].pop("earlystopping")
+    )
     evaluate = EvaluationLoop(
         evaluation_config=config["evaluation"],
         dataset=test_dataset,
@@ -183,7 +189,7 @@ if __name__ == "__main__":
     )
     run_args = run_config["trainer"] if "trainer" in run_config else {}
     trainer_config = load_yaml(trainer_config_path)
-    add_group(parser, run_args, trainer_config, "trainer")
+    add_group(parser, run_args, flatten(trainer_config), "trainer")
 
     evaluation_config_paths = pop_configs_from_sys_argv("-E", default=[])
 
@@ -204,7 +210,7 @@ if __name__ == "__main__":
         config["command"] = command_from_config(vars(args))
 
         if USE_WANDB:
-            wandb.init(config=args)
+            wandb.init(config=args, dir=tmpdir)
         try:
             result = main(config)
             if result is not None:
@@ -217,11 +223,8 @@ if __name__ == "__main__":
             yaml.dump(config, f, default_flow_style=False)
 
         if USE_WANDB:
+            wandb.save(os.path.join(tmpdir, "*.ckpt"))
             wandb.finish()
-            if os.path.exists(tmpdir):
-                os.system(
-                    f"wandb sync {tmpdir} --clean --clean-old-hours 0 --clean-force"
-                )
         else:
             if not isinstance(exception, KeyboardInterrupt):
                 target = shutil.move(tmpdir, "../local_runs/")

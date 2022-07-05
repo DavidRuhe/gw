@@ -40,7 +40,8 @@ class NormalizingFlow(pl.LightningModule):
             y = t(x)
             J += t.log_abs_det_jacobian(x, y)
             x = y
-        log_prob = self.base_dist.log_prob(x).squeeze() + J
+        
+        log_prob = self.base_dist.log_prob(x).sum(-1) + J
 
         if return_y:
             return log_prob, x
