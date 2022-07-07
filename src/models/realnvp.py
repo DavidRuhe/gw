@@ -188,7 +188,6 @@ def realnvp_block(
             8 * event_shape[dim] * extra_dims,
         ]
 
-    print(hidden_dims, (event_shape[dim] - split_dim) * extra_dims)
     hypernet = DenseNN(
         split_dim * extra_dims,
         hidden_dims,
@@ -200,10 +199,7 @@ def realnvp_block(
     return RealNVPBlock(permutation, split_dim, hypernet, dim=dim, **kwargs)
 
 
-def realnvp(input_dim, num_transforms, split_dim=None, hidden_dims=None):
-    if split_dim is None:
-        split_dim = input_dim // 2
-
+def realnvp(input_dim, num_transforms, *args, **kwargs):
     permutations = list(itertools.permutations(range(input_dim)))
     j = 0
 
@@ -211,20 +207,7 @@ def realnvp(input_dim, num_transforms, split_dim=None, hidden_dims=None):
     for i in range(num_transforms):
         j = i % len(permutations)
         p = torch.tensor(list(permutations[j]))
-        block = realnvp_block(input_dim, p, hidden_dims, split_dim)
-
-        transforms.append(block)
-
-        # self.transforms.append(Permute(torch.tensor(p)))
-        # transforms.append(T.permute(input_dim, torch.tensor(p)))
-        # transforms.append(T.affine_coupling(input_dim, hidden_dims, split_dim))
-        # self.transforms.append(
-        #     AffineCoupling(
-        #         split_dim,
-        #         DenseNN(split_dim, [hidden_dim] * num_layers, self.param_dims),
-        #     )
-        # )
-        # transforms.append(T.permute(input_dim, torch.tensor(pinv(p))))
-
-    return T.ComposeTransformModule(transforms)
-    # return transforms
+        transforms.append(T.permute(input_dim, p))
+        transforms.append(T.affine_coupling(input_dim, *args, **kwargs))
+        transforms.append(T.permute(input_dim, torch.tensor(pinv(p))))
+    return transforms

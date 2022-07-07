@@ -18,9 +18,19 @@ def load_data(path):
 
 class M1Dataset(torch.utils.data.TensorDataset):
     dimensionality = 1
+    has_normalization = True
+    m1_axis = 10 ** np.linspace(np.log10(0.5), np.log10(300), 128)
+    axes = [torch.from_numpy(m1_axis)]
 
     def __init__(
-        self, path, split, fold=0, test_size=0.1, limit_samples=0, hierarchical=True
+        self,
+        path,
+        split,
+        fold=0,
+        test_size=0.1,
+        limit_samples=0,
+        hierarchical=True,
+        normalize=True,
     ):
 
         data = load_data(path)[..., None]
@@ -37,7 +47,6 @@ class M1Dataset(torch.utils.data.TensorDataset):
         folds = get_k_folds(self.train_data, 5)
         fold_indices = folds[fold]
         valid_indices, train_indices = fold_indices
-
 
         if split == "train":
             super().__init__(

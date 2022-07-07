@@ -1,6 +1,8 @@
 import os
 import torch
 import numpy as np
+import math
+
 
 from data.utils import get_k_folds, train_test_split
 
@@ -18,6 +20,12 @@ def load_data(path):
 
 class M1M2Dataset(torch.utils.data.TensorDataset):
     dimensionality = 2
+    has_normalization = True
+    n_grid = 1024
+    grid = (
+        ("m1", torch.linspace(1, 128, n_grid)),
+        ("m2", torch.linspace(1, 128, n_grid)),
+    )
 
     def __init__(
         self, path, split, fold=0, test_size=0.1, limit_samples=0, hierarchical=True
@@ -27,7 +35,7 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
         M1, M2 = load_data(path)
 
         if not hierarchical:
-            ix = torch.arange(0, 30000, 1)[torch.randperm(30000)][:1]
+            ix = torch.arange(0, 30000, 1)[torch.randperm(30000)][:, 0]
             M1 = M1[:, ix]
             M2 = M2[:, ix]
 
@@ -36,6 +44,8 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
         data = self.normalize_forward(data.view(-1, self.dimensionality)).view(
             data.shape
         )
+
+        print(f"Normalized location and scale: {data.mean()}, {data.std()}")
 
         if limit_samples > 0:
             data = data[:limit_samples]
@@ -65,12 +75,12 @@ class M1M2Dataset(torch.utils.data.TensorDataset):
 
         if self.loc is None and self.scale is None:
 
-            self.loc, self.scale = x.mean(dim=0, keepdim=True), x.std(
+            self.loc, self.scale = x_log.mean(dim=0, keepdim=True), x_log.std(
                 dim=0, keepdim=True
             )
             return self.normalize_forward(x)
         else:
-            return (x - self.loc) / self.scale
+            return (x_log - self.loc) / self.scale
 
     def normalize_inverse(self, y):
         y = y * self.scale + self.loc

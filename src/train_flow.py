@@ -6,7 +6,8 @@ import shutil
 import sys
 import tempfile
 from functools import partial
-from pytorch_lightning import callbacks
+from typing import Iterable
+from pytorch_lightning import callbacks, loggers
 
 import yaml
 
@@ -35,75 +36,133 @@ class EvaluationLoop(callbacks.Callback):
         }
 
     def on_epoch_end(self, trainer, model):
-        dir = os.path.join(self.dir, f"epoch_{trainer.current_epoch}")
-        os.makedirs(dir, exist_ok=True)
+        if trainer.current_epoch % 1 == 0:
+            dir = os.path.join(self.dir, f"epoch_{trainer.current_epoch}")
+            os.makedirs(dir, exist_ok=True)
 
-        for k, evaluation in self.evaluations.items():
-            evaluation(
-                dir=dir,
-                dataset=self.dataset,
-                model=self.model,
-                **self.evaluation_config[k],
-            )
+            for k, evaluation in self.evaluations.items():
+                evaluation(
+                    dir=dir,
+                    dataset=self.dataset,
+                    model=self.model,
+                    **self.evaluation_config[k],
+                )
 
 
 def main(config):
 
-    dataset = partial(
-        object_from_config(config, "dataset"),
-        **config.pop("dataset"),
-    )
-    train_dataset = dataset(split="train")
-    valid_dataset = dataset(split="valid")
-    test_dataset = dataset(split="test")
+    dataset = object_from_config(config, "dataset")(**config["dataset"])
+
+    batch_size = config["loader"].pop("batch_size")
+    if isinstance(batch_size, Iterable):
+        train_batch_size, test_batch_size = batch_size
+    else:
+        train_batch_size = batch_size
+        test_batch_size = batch_size
 
     loader = partial(object_from_config(config, "loader"), **config.pop("loader"))
-    train_loader = loader(train_dataset, shuffle=True)
-    valid_loader = loader(valid_dataset, shuffle=False)
-    test_loader = loader(test_dataset, shuffle=False)
+    train_loader = loader(
+        dataset=dataset.train_dataset, batch_size=train_batch_size, shuffle=True
+    )
+    run_validation, run_test = False, False
+    if len(dataset.valid_dataset) > 0:
+        valid_loader = loader(
+            dataset=dataset.valid_dataset, batch_size=test_batch_size, shuffle=False
+        )
+        run_validation = True
+    if len(dataset.test_dataset) > 0:
+        test_loader = loader(
+            dataset=dataset.test_dataset, batch_size=test_batch_size, shuffle=False
+        )
+        run_test = True
 
-    # ckpt = config.pop("ckpt")
-    ckpt = None
+    ckpt = config["model"].pop("ckpt")
     flows = object_from_config(config, "flow")(**config.pop("flow"))
     model_object = object_from_config(config, "model")
 
     if ckpt is not None:
-        model = model_object.load_from_checkpoint(ckpt)
+        model = model_object.load_from_checkpoint(
+            ckpt, flows=flows, d=dataset.dimensionality
+        )
     else:
         model = model_object(
-            flows=flows, **config.pop("model"), d=train_dataset.dimensionality
+            flows=flows, **config.pop("model"), d=dataset.dimensionality
         )
 
     print(f"Parameters: {count_parameters(model)}")
 
-    checkpoint = callbacks.ModelCheckpoint(
-        monitor="val_loss", mode="min", dirpath=config["dir"]
-    )
-    earlystop = callbacks.EarlyStopping(
-        monitor="val_loss", **config["trainer"].pop("earlystopping")
-    )
     evaluate = EvaluationLoop(
         evaluation_config=config["evaluation"],
-        dataset=test_dataset,
+        dataset=dataset,
         model=model,
         dir=config["dir"],
     )
 
+    if run_validation > 0:
+        monitor = "valid_loss"
+    else:
+        monitor = "train_loss"
+
+    checkpoint = callbacks.ModelCheckpoint(
+        monitor=monitor, mode="min", dirpath=config["dir"]
+    )
+
+    earlystop = callbacks.EarlyStopping(
+        monitor=monitor, **config["trainer"].pop("earlystopping")
+    )
+
+    from pytorch_lightning.callbacks import ProgressBar
+
+    class MeterlessProgressBar(ProgressBar):
+        def _update_bar(self, bar):
+            bar.dynamic_ncols = False
+            bar.ncols = 0
+            return bar
+
+        def init_train_tqdm(self):
+            bar = self._update_bar(super().init_train_tqdm())
+            return bar
+
+        def init_validation_tqdm(self):
+            bar = self._update_bar(super().init_validation_tqdm())
+            return bar
+
+        def init_sanity_tqdm(self):
+            bar = self._update_bar(super().init_sanity_tqdm())
+            return bar
+
+        def init_predict_tqdm(self):
+            bar = self._update_bar(super().init_predict_tqdm())
+            return bar
+
+        def init_test_tqdm(self):
+            bar = self._update_bar(super().init_test_tqdm())
+            return bar
+
+    bar = MeterlessProgressBar(refresh_rate=1)
+
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),
-        callbacks=[checkpoint, earlystop, evaluate],
-        # logger=loggers.CSVLogger(config["dir"]),
+        # callbacks=[checkpoint, earlystop, evaluate, bar],
+        callbacks=[checkpoint, evaluate, earlystop, bar],
+        logger=loggers.CSVLogger(config["dir"]),
         deterministic=True,
+        # enable_progress_bar=False,
     )
 
     if config["train"]:
-        trainer.fit(model, train_loader, valid_loader)
-        (result,) = trainer.validate(model, valid_loader, ckpt_path="best")
-        if "val_loss" in result:
-            assert result["val_loss"] == checkpoint.best_model_score.item()
-        (result,) = trainer.test(model, test_loader, ckpt_path="best")
+        trainer.fit(model, train_loader)
+
+        if run_validation:
+            (result,) = trainer.validate(model, ckpt_path="best")
+            if "val_loss" in result:
+                assert result["val_loss"] == checkpoint.best_model_score.item()
+        if run_test:
+            if len(test_loader) > 0:
+                (result,) = trainer.test(model, test_loader, ckpt_path="best")
     else:
-        (result,) = trainer.test(model, test_loader)
+        if run_test:
+            (result,) = trainer.test(model, test_loader)
 
     return result
 
@@ -197,7 +256,6 @@ if __name__ == "__main__":
         name, ext = os.path.splitext(os.path.basename(path))
         evaluation_config = load_yaml(path)
         add_group(parser, run_args, evaluation_config, f"evaluation.{name}")
-        print(path)
 
     args = parser.parse_args()
     config = unflatten(vars(args))

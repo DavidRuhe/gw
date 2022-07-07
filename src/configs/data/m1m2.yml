@@ -1,3 +1,4 @@
 object: "data.m1m2.M1M2Dataset"
-path: "/project/druhe/gw/Combined_GWTC_m1m2chieffz.npz"
+# path: "/project/druhe/gw/Combined_GWTC_m1m2chieffz.npz"
+path: "/Users/druhe/Projects/gw/src/../datasets/Combined_GWTC_m1m2chieffz.npz"
 fold: 0

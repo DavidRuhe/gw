@@ -141,7 +141,7 @@ def add_group(parser, base_args, cfg, group_name):
             type=parse_arg_default(type(v)),
             default=default,
             help=help,
-            required=v is None
+            # required=v is None
         )
 
 
