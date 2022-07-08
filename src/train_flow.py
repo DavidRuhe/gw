@@ -98,6 +98,8 @@ def main(config):
         dir=config["dir"],
     )
 
+
+
     if run_validation > 0:
         monitor = "valid_loss"
     else:
