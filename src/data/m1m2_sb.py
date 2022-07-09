@@ -22,7 +22,7 @@ class ConcatDataset(torch.utils.data.Dataset):
 
 
 def process_data(path):
-    events = np.load("../datasets/sampleDict_FAR_1_in_1_yr.pickle", allow_pickle=True)
+    events = np.load(path, allow_pickle=True)
     datasets = []
     m1min, m1max = float("inf"), -float("inf")
     m2min, m2max = float("inf"), -float("inf")
