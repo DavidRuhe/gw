@@ -1,0 +1,3 @@
+object: "data.m1m2_sb.M1M2SBDataset"
+sample_path: "/Users/druhe/Projects/gw/datasets/sampleDict_FAR_1_in_1_yr.pickle"
+injection_path: "/Users/druhe/Projects/gw/datasets/injectionDict_FAR_1_in_1.pickle"

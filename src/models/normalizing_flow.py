@@ -7,9 +7,12 @@ import pytorch_lightning as pl
 from collections.abc import Iterable
 
 import numpy as np
-# from scipy.interpolate import interp1d
+
+from scipy.interpolate import interp1d
+
 # from cmath import log
 from astropy.cosmology import Planck18 as cosmo
+
 # import emcee
 
 # catalog_data = np.load(
@@ -35,43 +38,25 @@ from astropy.cosmology import Planck18 as cosmo
 
 #     return log_likelihood
 
-
-# def likelihood(m1m2z, flow):
-#     # p_m1 = truncated_powerlaw(x[:, 0], params[0], params[1], params[2])
-#     # p_m2 = M2_distribution(x[:, 1], x[:, 0], mmin=0)
-#     m1m2 = m1m2z[:, :2]
-#     p_m1m2 = flow.log_prob(m1m2).exp()
-#     p_z = z_distribution(m1m2z[:, 2])
-#     return p_m1m2 * p_z
+M_RNG = (0.2, 100)
 
 
-# def selection_bias(likelihood, params):
-#     m1 = selection_data["m1"]
-#     m2 = selection_data["m2"]
-#     z = selection_data["z"]
-#     p_m1m2z = likelihood(np.array([m1, m2, z]).T, params)
-#     likelihood_samples = p_m1m2z / selection_data["p_draw_m1m2z"]
-#     return np.sum(likelihood_samples / selection_data["nTrials"])
+z_axis = np.linspace(0, 10, 100000)
+dVdz = (
+    cosmo.differential_comoving_volume(z_axis).value / 1e9 * 4 * np.pi
+)  # Astropy dVcdz is per stradian
+dVdz_interp = interp1d(z_axis, dVdz)
 
 
-# def log_prob_sb(x, prior, flow):
-#     selection_bias_ = selection_bias(likelihood, flow)
-#     flow_probs = likelihood(x, flow)
+def z_distribution_unnormalized(z):
+    return dVdz_interp(z) * (1 + z) ** 1.7
 
-#     log_likelihood = torch.log(
-#         torch.mean(flow_probs / prior / selection_bias_)
-#     )
 
-#     # for i in range(len(events_posterior)):
-#     #     log_likelihood += np.log(
-#     #         np.mean(
-#     #             likelihood(events_posterior[i], params)
-#     #             / events_prior[i]
-#     #             / selection_bias_
-#     #         )
-#     #     )
+z_normalization = np.trapz(z_distribution_unnormalized(z_axis), z_axis)
 
-    # return log_likelihood
+
+def z_distribution(z):
+    return dVdz_interp(z) * (1 + z) ** 1.7 / z_normalization
 
 
 def log_prob(x, transforms, base_dist):
@@ -84,6 +69,65 @@ def log_prob(x, transforms, base_dist):
 
     log_prob = base_dist.log_prob(x).sum(-1) + J
     return log_prob, y
+
+
+def likelihood(m1m2z, model, z_distribution):
+    # p_m1 = truncated_powerlaw(x[:, 0], params[0], params[1], params[2])
+    # p_m2 = M2_distribution(x[:, 1], x[:, 0], mmin=0)
+
+    m1m2 = m1m2z[:, :2]
+    p_m1m2 = model.log_prob(m1m2).exp()
+    p_z = z_distribution(m1m2z[:, 2])
+    return p_m1m2 * p_z
+
+
+def log_selection_bias(
+    flows, base_dist, model, selection_m1m2z, p_draw_m1m2z, selection_trials
+):
+    # p_m1m2z = likelihood(selection_m1m2z, model)
+    # likelihood_samples = p_m1m2z / selection_x["p_draw_m1m2z"]
+    # return np.sum(likelihood_samples / selection_data["nTrials"])
+
+    # m1m2, z = (
+    #     selection_m1m2z[:, :2],
+    #     selection_m1m2z[:, 2],
+    # )
+    # logpm1m2, _ = log_prob(m1m2, flows, base_dist)
+    # logpz = torch.from_numpy(np.log(z_distribution(z.numpy())))
+    # logpm1m2z = logpm1m2 + logpz
+    logpm1m2z = model.log_prob(selection_m1m2z)
+    log_pdraw = p_draw_m1m2z.log()
+    return torch.logsumexp(logpm1m2z - log_pdraw, dim=0) - math.log(selection_trials)
+
+
+def log_prob_sb(
+    x, flows, base_dist, model, selection_m1m2z, p_draw_m1m2z, selection_trials, sb_weight
+):
+
+    sb = log_selection_bias(
+        flows, base_dist, model, selection_m1m2z, p_draw_m1m2z, selection_trials
+    )
+
+    m1m2z = x[:, :, :3]
+
+    # logpm1m2, y = log_prob(m1m2.view(-1, 2), flows, base_dist)
+    # logpm1m2 = logpm1m2.view(m1m2.shape[:-1])
+
+    # z = x[:, :, 2]
+    # logpz = torch.from_numpy(np.log(z_distribution(z.view(-1).numpy()))).view(z.shape)
+
+    # logpm1m2z = logpm1m2 + logpz
+    logpm1m2z = model.log_prob(m1m2z.view(-1, 3)).view(m1m2z.shape[:-1])
+
+    q_z = x[:, :, 3] / 1e9  # z_prior, keep in mind.
+    logq = q_z.log() * 0
+
+    ll = torch.logsumexp(logpm1m2z - logq, dim=0)
+
+    if sb_weight > 0:
+        ll = ll + sb * sb_weight
+
+    return ll
 
 
 class NormalizingFlow(pl.LightningModule):
@@ -167,11 +211,53 @@ class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
         return total_log_prob
 
 
-# z_axis = np.linspace(0, 10, 100000)
-# dVdz = (
-#     cosmo.differential_comoving_volume(z_axis).value / 1e9 * 4 * np.pi
-# )  # Astropy dVcdz is per stradian
-# dVdz_interp = interp1d(z_axis, dVdz)
+class HierarchicalNormalizingFlowSB(NormalizingFlow):
+    def __init__(self, selection_data, sb_weight, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.selection_data = selection_data
+        self.selection_m1m2z = torch.from_numpy(
+            np.stack(
+                [selection_data["m1"], selection_data["m2"], selection_data["z"]],
+                axis=-1,
+            )
+        ).float()
+        self.p_draw_m1m2z = torch.from_numpy(selection_data["p_draw_m1m2z"]).float()
+        self.selection_trials = torch.tensor(selection_data["nTrials"])
+        self.sb_weight = sb_weight
+
+    def step(self, batch, batch_idx):
+        (x,) = batch
+        lp = log_prob_sb(
+            x,
+            self.flows,
+            self.base_dist,
+            self,
+            self.selection_m1m2z,
+            self.p_draw_m1m2z,
+            self.selection_trials,
+            self.sb_weight
+        )
+        loss = -lp.mean(0)
+        return loss
+
+    def log_prob(self, input):
+        assert len(input.shape) == 2
+        m1m2 = input[:, :2]
+        logpm1m2, _ = log_prob(m1m2, self.flows, self.base_dist)
+        z = input[:, 2]
+        logpz = torch.from_numpy(np.log(z_distribution(z.view(-1).numpy()))).view(
+            z.shape
+        )
+        logpm1m2z = logpm1m2 + logpz
+        return logpm1m2z
+
+    # def step(self, batch, batch_idx):
+    #     (x,) = batch
+    #     lp, y = log_prob(x.view(-1, 2), self.flows, self.base_dist)
+    #     lp = lp.view(x.shape[:-1])
+    #     lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
+    #     loss = -lp.mean(0)
+    #     return loss
 
 
 # def truncated_powerlaw(m1, index, mmin=5, mmax=50):
@@ -197,17 +283,6 @@ class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
 
 # def M2_distribution(m2, m1, mmin):
 #     return 3 * m2**2 / (m1**3 - mmin**3)
-
-
-# def z_distribution_unnormalized(z):
-#     return dVdz_interp(z) * (1 + z) ** 1.7
-
-
-# z_normalization = np.trapz(z_distribution_unnormalized(z_axis), z_axis)
-
-
-# def z_distribution(z):
-#     return dVdz_interp(z) * (1 + z) ** 1.7 / z_normalization
 
 
 # events_posterior = []
