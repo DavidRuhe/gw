@@ -2,7 +2,7 @@
 command: python train_flow.py -D configs/data/m1m2.yml -F configs/flows/planar.yml -M configs/models/hierarchical_flow.yml -E configs/evaluation/flow_heatmap_2d.yml
 seed: 42
 model:
-  lr: 0.01
+  lr: 0.001
 
 loader:
   batch_size: 32
@@ -13,6 +13,7 @@ flow:
 trainer:
   earlystopping:
     patience: 1
+  min_epochs: 128
 
 dataset:
-  train_val_test_split: [1.0, 0.0, 0.0]
+  train_val_test_split: [0.8, 0.2, 0.0]

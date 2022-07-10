@@ -8,11 +8,10 @@ import numpy as np
 
 
 @torch.no_grad()
-def flow_heatmap_2d(dir, model, dataset, boundaries=(-3, 3)):
+def flow_heatmap_2d(trainer, model, dataset, mode):
     # grid = torch.linspace(*boundaries, resolution)
     # meshgrid = torch.meshgrid(grid, grid, indexing="xy")
     # x = torch.stack(meshgrid, dim=-1).reshape(-1, 2)
-    breakpoint()
     axes_names = []
     axes = []
 
@@ -47,15 +46,14 @@ def flow_heatmap_2d(dir, model, dataset, boundaries=(-3, 3)):
     plt.ylabel(axes_names[1])
     plt.tight_layout()
     # plt.savefig(os.path.join(dir, "flow_heatmap_2d.png"), bbox_inches="tight")
-    model.logger.log_image(key="flow_heatmap_2d", images=[fig])
+    model.logger.log_image(key=f"{mode}_flow_heatmap_2d", images=[fig], step=trainer.global_step)
     plt.close()
-
 
     for d in range(2):
         fig = plt.figure()
         plt.plot(axes[d], prob.sum(d), label=axes_names[d])
         # plt.savefig(os.path.join(dir, "marginal_%d.png" % d), bbox_inches="tight")
-        model.logger.log_image(key="marginal_%d" % d, images=[fig])
+        model.logger.log_image(key=f"{mode}_marginal_%d" % d, images=[fig], step=trainer.global_step)
         plt.close()
 
 

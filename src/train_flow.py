@@ -25,28 +25,33 @@ if USE_WANDB:
 
 
 class EvaluationLoop(callbacks.Callback):
-    def __init__(self, evaluation_config, dataset, model, dir):
+    def __init__(self, evaluation_config, dataset):
         self.evaluation_config = evaluation_config
         self.dataset = dataset
-        self.model = model
-        self.dir = dir
         self.evaluations = {
             evaluation: object_from_config(evaluation_config, evaluation)
             for evaluation in evaluation_config
         }
 
-    def on_epoch_end(self, trainer, model):
+    def _loop(self, trainer, model, mode):
         if trainer.current_epoch % 1 == 0:
-            dir = os.path.join(self.dir, f"epoch_{trainer.current_epoch}")
-            os.makedirs(dir, exist_ok=True)
-
             for k, evaluation in self.evaluations.items():
                 evaluation(
-                    dir=dir,
+                    trainer=trainer,
                     dataset=self.dataset,
-                    model=self.model,
+                    model=model,
+                    mode=mode,
                     **self.evaluation_config[k],
                 )
+
+    def on_validation_epoch_end(self, trainer, model):
+        self._loop(trainer, model, mode="val")
+
+    def on_test_epoch_end(self, trainer, model):
+        self._loop(trainer, model, mode="test")
+
+    def on_train_epoch_end(self, trainer, model):
+        self._loop(trainer, model, mode="train")
 
 
 def main(config):
@@ -94,14 +99,10 @@ def main(config):
     evaluate = EvaluationLoop(
         evaluation_config=config["evaluation"],
         dataset=dataset,
-        model=model,
-        dir=config["dir"],
     )
 
-
-
     if run_validation > 0:
-        monitor = "valid_loss"
+        monitor = "val_loss"
     else:
         monitor = "train_loss"
 
@@ -143,22 +144,42 @@ def main(config):
 
     bar = MeterlessProgressBar(refresh_rate=1)
 
+    class CSVLogger(loggers.CSVLogger):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+
+        def log_image(self, key, images, step=None, **kwargs) -> None:
+
+            if not isinstance(images, list):
+                raise TypeError(f'Expected a list as "images", found {type(images)}')
+
+            for i, fig in enumerate(images):
+                if step is not None:
+                    save_file = os.path.join(self.log_dir, f"{key}_{step}_{i}.png")
+                else:
+                    save_file = os.path.join(self.log_dir, f"{key}_{i}.png")
+
+                fig.savefig(save_file, bbox_inches="tight", **kwargs)
+                fig.clf()
+
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),
         # callbacks=[checkpoint, earlystop, evaluate, bar],
         callbacks=[checkpoint, evaluate, earlystop, bar],
-        logger=loggers.CSVLogger(config["dir"]),
+        logger=CSVLogger(config["dir"]),
         deterministic=True,
         # enable_progress_bar=False,
     )
 
     if config["train"]:
-        trainer.fit(model, train_loader)
 
         if run_validation:
-            (result,) = trainer.validate(model, ckpt_path="best")
+            trainer.fit(model, train_loader, valid_loader)
+            (result,) = trainer.validate(model, valid_loader, ckpt_path="best")
             if "val_loss" in result:
                 assert result["val_loss"] == checkpoint.best_model_score.item()
+        else:
+            trainer.fit(model, train_loader)
         if run_test:
             if len(test_loader) > 0:
                 (result,) = trainer.test(model, test_loader, ckpt_path="best")
