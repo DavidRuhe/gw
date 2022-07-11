@@ -46,19 +46,23 @@ def flow_heatmap_2d(trainer, model, dataset, mode):
     plt.ylabel(axes_names[1])
     plt.tight_layout()
     # plt.savefig(os.path.join(dir, "flow_heatmap_2d.png"), bbox_inches="tight")
-    model.logger.log_image(key=f"{mode}_flow_heatmap_2d", images=[fig], step=trainer.global_step)
+    model.logger.log_image(
+        key=f"{mode}_flow_heatmap_2d", images=[fig], step=trainer.global_step
+    )
     plt.close()
 
     for d in range(2):
         fig = plt.figure()
         plt.plot(axes[d], prob.sum(d), label=axes_names[d])
         # plt.savefig(os.path.join(dir, "marginal_%d.png" % d), bbox_inches="tight")
-        model.logger.log_image(key=f"{mode}_marginal_%d" % d, images=[fig], step=trainer.global_step)
+        model.logger.log_image(
+            key=f"{mode}_marginal_%d" % d, images=[fig], step=trainer.global_step
+        )
         plt.close()
 
 
 @torch.no_grad()
-def flow_heatmap_m1m2z(dir, model, dataset):
+def flow_heatmap_m1m2z(trainer, model, dataset, mode):
     axes_names = []
     axes = []
 
@@ -98,7 +102,9 @@ def flow_heatmap_m1m2z(dir, model, dataset):
     plt.ylabel(axes_names[1])
     plt.tight_layout()
 
-    model.logger.log_image(key="flow_heatmap_2d", images=[fig])
+    model.logger.log_image(
+        key=f"{mode}_flow_heatmap_2d", images=[fig], step=trainer.global_step
+    )
     plt.close()
     # plt.savefig(os.path.join(dir, "flow_heatmap_2d.png"), bbox_inches="tight")
     # plt.close()
@@ -110,7 +116,9 @@ def flow_heatmap_m1m2z(dir, model, dataset):
         fig = plt.figure()
         plt.plot(axes[d], prob.sum(axes_to_sum), label=axes_names[d])
 
-        model.logger.log_image(key="marginal_%d" % d, images=[fig])
+        model.logger.log_image(
+            key=f"{mode}_marginal_%d" % d, images=[fig], step=trainer.global_step
+        )
         plt.close()
         # plt.savefig(os.path.join(dir, "marginal_%d.png" % d), bbox_inches="tight")
         # plt.close()

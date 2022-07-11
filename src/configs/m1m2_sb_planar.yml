@@ -2,8 +2,8 @@
 command: python train_flow_sb.py -D configs/data/m1m2_sb.yml -F configs/flows/planar.yml -M configs/models/hierarchical_flow_sb.yml -E configs/evaluation/flow_heatmap_m1m2z.yml
 seed: 42
 model:
-  lr: 0.01
-  sb_weight: 0.1
+  lr: 0.001
+  sb_weight: 0
 
 loader:
   batch_size: 32
@@ -14,6 +14,7 @@ flow:
 trainer:
   earlystopping:
     patience: 1
+  min_epochs: 128
 
 dataset:
   train_val_test_split: [1.0, 0.0, 0.0]

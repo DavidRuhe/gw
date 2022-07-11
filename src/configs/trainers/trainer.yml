@@ -4,3 +4,4 @@ min_epochs: 1
 earlystopping:
     patience: 1
 limit_train_batches: 262144
+limit_val_batches: 262144

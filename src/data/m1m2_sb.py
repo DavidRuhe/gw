@@ -89,7 +89,7 @@ class M1M2SBDataset:
 
         train_length = int(train_fraction * len(dataset))
         val_length = int(val_fraction * len(dataset))
-        test_length = int(test_fraction * len(dataset))
+        test_length = len(dataset) - train_length - val_length
 
         (
             self.train_dataset,

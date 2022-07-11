@@ -54,7 +54,7 @@ class EvaluationLoop(callbacks.Callback):
         self._loop(trainer, model, mode="train")
 
 
-def main(config):
+def main(config, experiment):
 
     dataset = object_from_config(config, "dataset")(**config["dataset"])
 
@@ -70,9 +70,9 @@ def main(config):
         dataset=dataset.train_dataset, batch_size=train_batch_size, shuffle=True
     )
     run_validation, run_test = False, False
-    if len(dataset.valid_dataset) > 0:
-        valid_loader = loader(
-            dataset=dataset.valid_dataset, batch_size=test_batch_size, shuffle=False
+    if len(dataset.val_dataset) > 0:
+        val_loader = loader(
+            dataset=dataset.val_dataset, batch_size=test_batch_size, shuffle=False
         )
         run_validation = True
     if len(dataset.test_dataset) > 0:
@@ -96,11 +96,13 @@ def main(config):
 
     print(f"Parameters: {count_parameters(model)}")
 
-    evaluate = EvaluationLoop(
-        evaluation_config=config["evaluation"],
-        dataset=dataset,
-    )
-
+    callback_chain = []
+    if "evaluation" in config:
+        evaluate = EvaluationLoop(
+            evaluation_config=config["evaluation"],
+            dataset=dataset,
+        )
+    callback_chain.append(evaluate)
     if run_validation > 0:
         monitor = "val_loss"
     else:
@@ -109,11 +111,11 @@ def main(config):
     checkpoint = callbacks.ModelCheckpoint(
         monitor=monitor, mode="min", dirpath=config["dir"]
     )
-
+    callback_chain.append(checkpoint)
     earlystop = callbacks.EarlyStopping(
         monitor=monitor, **config["trainer"].pop("earlystopping")
     )
-
+    callback_chain.append(earlystop)
     from pytorch_lightning.callbacks import ProgressBar
 
     class MeterlessProgressBar(ProgressBar):
@@ -143,6 +145,12 @@ def main(config):
             return bar
 
     bar = MeterlessProgressBar(refresh_rate=1)
+    callback_chain.append(bar)
+
+    if USE_WANDB:
+        logger = loggers.WandbLogger(experiment=experiment, dir=config["dir"])
+    else:
+        logger = CSVLogger(config["dir"])
 
     class CSVLogger(loggers.CSVLogger):
         def __init__(self, *args, **kwargs):
@@ -165,8 +173,8 @@ def main(config):
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),
         # callbacks=[checkpoint, earlystop, evaluate, bar],
-        callbacks=[checkpoint, evaluate, earlystop, bar],
-        logger=CSVLogger(config["dir"]),
+        callbacks=callback_chain,
+        logger=logger,
         deterministic=True,
         # enable_progress_bar=False,
     )
@@ -174,8 +182,8 @@ def main(config):
     if config["train"]:
 
         if run_validation:
-            trainer.fit(model, train_loader, valid_loader)
-            (result,) = trainer.validate(model, valid_loader, ckpt_path="best")
+            trainer.fit(model, train_loader, val_loader)
+            (result,) = trainer.validate(model, val_loader, ckpt_path="best")
             if "val_loss" in result:
                 assert result["val_loss"] == checkpoint.best_model_score.item()
         else:
@@ -186,6 +194,8 @@ def main(config):
     else:
         if run_test:
             (result,) = trainer.test(model, test_loader)
+        else:
+            result = {}
 
     return result
 
@@ -237,7 +247,8 @@ def command_from_config(config):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--train", action="store_true")
-
+    parser.add_argument("--experiment.name", type=str, default=None)
+    parser.add_argument("--experiment.group", type=str, default=None)
     (run_config_path,) = pop_configs_from_sys_argv("-C", default=["configs/base.yml"])
     run_config = load_yaml(run_config_path)
     add_arguments(parser, run_config)
@@ -291,9 +302,11 @@ if __name__ == "__main__":
         config["command"] = command_from_config(vars(args))
 
         if USE_WANDB:
-            wandb.init(config=args, dir=tmpdir)
+            experiment = wandb.init(config=args, dir=tmpdir, **config["experiment"])
+        else:
+            experiment = None
         try:
-            result = main(config)
+            result = main(config, experiment)
             if result is not None:
                 config = {**config, **result}
         except Exception as e:

@@ -101,30 +101,28 @@ def log_selection_bias(
 
 
 def log_prob_sb(
-    x, flows, base_dist, model, selection_m1m2z, p_draw_m1m2z, selection_trials, sb_weight
+    x,
+    flows,
+    base_dist,
+    model,
+    selection_m1m2z,
+    p_draw_m1m2z,
+    selection_trials,
+    sb_weight,
 ):
 
-    sb = log_selection_bias(
-        flows, base_dist, model, selection_m1m2z, p_draw_m1m2z, selection_trials
-    )
 
     m1m2z = x[:, :, :3]
-
-    # logpm1m2, y = log_prob(m1m2.view(-1, 2), flows, base_dist)
-    # logpm1m2 = logpm1m2.view(m1m2.shape[:-1])
-
-    # z = x[:, :, 2]
-    # logpz = torch.from_numpy(np.log(z_distribution(z.view(-1).numpy()))).view(z.shape)
-
-    # logpm1m2z = logpm1m2 + logpz
     logpm1m2z = model.log_prob(m1m2z.view(-1, 3)).view(m1m2z.shape[:-1])
-
     q_z = x[:, :, 3] / 1e9  # z_prior, keep in mind.
-    logq = q_z.log() * 0
-
+    logq = q_z.log()
     ll = torch.logsumexp(logpm1m2z - logq, dim=0)
 
     if sb_weight > 0:
+
+        sb = log_selection_bias(
+            flows, base_dist, model, selection_m1m2z, p_draw_m1m2z, selection_trials
+        )
         ll = ll + sb * sb_weight
 
     return ll
@@ -235,7 +233,7 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
             self.selection_m1m2z,
             self.p_draw_m1m2z,
             self.selection_trials,
-            self.sb_weight
+            self.sb_weight,
         )
         loss = -lp.mean(0)
         return loss
