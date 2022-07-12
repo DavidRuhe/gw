@@ -11,5 +11,5 @@ trainer:
   min_epochs: 128
 flow:
   input_dim: 2
-  num_transforms: 10
-  hidden_dims: [32]
+  num_transforms: 8
+  hidden_dims: [8]
