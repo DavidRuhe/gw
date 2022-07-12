@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-import sklearn
+import os
 
 from data.utils import get_k_folds, train_test_split
 
@@ -26,6 +26,7 @@ class ConcatDataset(torch.utils.data.Dataset):
 
 
 def process_gw_data(path):
+    path = os.path.join(os.environ['DATAROOT'], path)
     events = np.load(path, allow_pickle=True)
     datasets = []
     m1min, m1max = float("inf"), -float("inf")
