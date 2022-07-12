@@ -1,4 +1,4 @@
 object: "data.m1m2.M1M2Dataset"
-# path: "/project/druhe/gw/Combined_GWTC_m1m2chieffz.npz"
-path: "/Users/druhe/Projects/gw/src/../datasets/Combined_GWTC_m1m2chieffz.npz"
+path: "/Users/druhe/Projects/gw/datasets/sampleDict_FAR_1_in_1_yr.pickle"
 fold: 0
+train_batch_size: 32

@@ -40,7 +40,7 @@ def process_gw_data(path):
         m2min = min(m2min, m2.min())
         m2max = max(m2max, m2.max())
 
-        z = torch.from_numpy(event["z_prior"]).float()
+        z = torch.from_numpy(event["z"]).float()
         z = z.clamp(*Z_RNG)
         zmin = min(zmin, z.min())
         zmax = max(zmax, z.max())
@@ -72,9 +72,11 @@ class M1M2ZDataset:
         hierarchical=True,
         train_val_test_split=(0.8, 0.1, 0.1),
         loader_kwargs={},
+        train_batch_size=32,
     ):
 
         self.hierarchical = hierarchical
+        self.train_batch_size = train_batch_size
 
         if not hierarchical:
             raise NotImplementedError
@@ -86,7 +88,7 @@ class M1M2ZDataset:
         gw_data = self.gw_data
         gw_loader = torch.utils.data.DataLoader(
             gw_data,
-            batch_size=self.gw_train_batch_size,
+            batch_size=self.train_batch_size,
             shuffle=True,
             **self.loader_kwargs
         )
@@ -97,4 +99,3 @@ class M1M2ZDataset:
 
     def test_dataloader(self):
         return None
-

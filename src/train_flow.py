@@ -24,6 +24,26 @@ if USE_WANDB:
     import wandb
 
 
+
+class CSVLogger(loggers.CSVLogger):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def log_image(self, key, images, step=None, **kwargs) -> None:
+
+        if not isinstance(images, list):
+            raise TypeError(f'Expected a list as "images", found {type(images)}')
+
+        for i, fig in enumerate(images):
+            if step is not None:
+                save_file = os.path.join(self.log_dir, f"{key}_{step}_{i}.png")
+            else:
+                save_file = os.path.join(self.log_dir, f"{key}_{i}.png")
+
+            fig.savefig(save_file, bbox_inches="tight", **kwargs)
+            fig.clf()
+
+
 class EvaluationLoop(callbacks.Callback):
     def __init__(self, evaluation_config, dataset):
         self.evaluation_config = evaluation_config
@@ -58,28 +78,11 @@ def main(config, experiment):
 
     dataset = object_from_config(config, "dataset")(**config["dataset"])
 
-    batch_size = config["loader"].pop("batch_size")
-    if isinstance(batch_size, Iterable):
-        train_batch_size, test_batch_size = batch_size
-    else:
-        train_batch_size = batch_size
-        test_batch_size = batch_size
-
-    loader = partial(object_from_config(config, "loader"), **config.pop("loader"))
-    train_loader = loader(
-        dataset=dataset.train_dataset, batch_size=train_batch_size, shuffle=True
-    )
-    run_validation, run_test = False, False
-    if len(dataset.val_dataset) > 0:
-        val_loader = loader(
-            dataset=dataset.val_dataset, batch_size=test_batch_size, shuffle=False
-        )
-        run_validation = True
-    if len(dataset.test_dataset) > 0:
-        test_loader = loader(
-            dataset=dataset.test_dataset, batch_size=test_batch_size, shuffle=False
-        )
-        run_test = True
+    train_loader = dataset.train_dataloader()
+    val_loader = dataset.val_dataloader()
+    test_loader = dataset.test_dataloader()
+    run_validation = val_loader is not None
+    run_test = test_loader is not None
 
     ckpt = config["model"].pop("ckpt")
     flows = object_from_config(config, "flow")(**config.pop("flow"))
@@ -91,7 +94,9 @@ def main(config, experiment):
         )
     else:
         model = model_object(
-            flows=flows, **config.pop("model"), d=dataset.dimensionality
+            dataset=dataset,
+            flows=flows, 
+            **config.pop("model")
         )
 
     print(f"Parameters: {count_parameters(model)}")
@@ -152,24 +157,6 @@ def main(config, experiment):
     else:
         logger = CSVLogger(config["dir"])
 
-    class CSVLogger(loggers.CSVLogger):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-
-        def log_image(self, key, images, step=None, **kwargs) -> None:
-
-            if not isinstance(images, list):
-                raise TypeError(f'Expected a list as "images", found {type(images)}')
-
-            for i, fig in enumerate(images):
-                if step is not None:
-                    save_file = os.path.join(self.log_dir, f"{key}_{step}_{i}.png")
-                else:
-                    save_file = os.path.join(self.log_dir, f"{key}_{i}.png")
-
-                fig.savefig(save_file, bbox_inches="tight", **kwargs)
-                fig.clf()
-
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),
         # callbacks=[checkpoint, earlystop, evaluate, bar],
@@ -188,6 +175,7 @@ def main(config, experiment):
                 assert result["val_loss"] == checkpoint.best_model_score.item()
         else:
             trainer.fit(model, train_loader)
+            result = {}
         if run_test:
             if len(test_loader) > 0:
                 (result,) = trainer.test(model, test_loader, ckpt_path="best")
@@ -282,7 +270,7 @@ if __name__ == "__main__":
     )
     run_args = run_config["trainer"] if "trainer" in run_config else {}
     trainer_config = load_yaml(trainer_config_path)
-    add_group(parser, run_args, flatten(trainer_config), "trainer")
+    add_group(parser, run_args, trainer_config, "trainer")
 
     evaluation_config_paths = pop_configs_from_sys_argv("-E", default=[])
 
@@ -302,6 +290,9 @@ if __name__ == "__main__":
         config["command"] = command_from_config(vars(args))
 
         if USE_WANDB:
+            assert (
+                config["experiment"]["name"] is not None
+            ), 'Please provide "experiment.name"'
             experiment = wandb.init(config=args, dir=tmpdir, **config["experiment"])
         else:
             experiment = None

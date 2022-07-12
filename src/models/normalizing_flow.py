@@ -128,11 +128,12 @@ def log_prob_sb(
 
 
 class NormalizingFlow(pl.LightningModule):
-    def __init__(self, flows, lr=1.0e-3, d=1):
+    def __init__(self, dataset, flows, lr=1.0e-3):
         super().__init__()
 
         self.flows = flows
-        self.base_dist = dist.Normal(torch.zeros(d), torch.ones(d))
+        self.d = dataset.dimensionality
+        self.base_dist = dist.Normal(torch.zeros(self.d), torch.ones(self.d))
         self.lr = lr
         if isinstance(flows, Iterable):
             self.trainable_flows = nn.ModuleList(
@@ -140,8 +141,6 @@ class NormalizingFlow(pl.LightningModule):
             )
         else:
             self.trainable_flows = flows
-
-        self.d = d
 
     def log_prob(self, x):
         lp, _ = log_prob(x, self.flows, self.base_dist)
@@ -175,11 +174,24 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
 
     def step(self, batch, batch_idx):
         (x,) = batch
-        lp, y = log_prob(x.view(-1, 2), self.flows, self.base_dist)
+        lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
         lp = lp.view(x.shape[:-1])
         lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
         loss = -lp.mean(0)
         return loss
+
+    def forward(self, batch):
+
+        (x,) = batch
+        if len(x.shape) == 3:
+            lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
+            lp = lp.view(x.shape[:-1])
+            lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
+        else:
+            lp = log_prob(x, self.flows, self.base_dist)
+            return lp
+
+    
 
 
 class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
@@ -209,9 +221,8 @@ class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
 
 
 class HierarchicalNormalizingFlowSB(NormalizingFlow):
-    def __init__(self, dataset, sb_weight, *args, **kwargs):
+    def __init__(self, sb_weight, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.dataset = dataset
         self.sb_weight = sb_weight
 
     def step(self, batch, batch_idx):
@@ -227,24 +238,26 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
         loss = -lp.mean(0)
         return loss
 
-    def log_prob(self, input, sel_input=None):
-        if len(input.shape) == 2:
-            m1m2 = input[:, :2]
+    def log_prob(self, gw_data, sel_input=None):
+        if type(gw_data) in (tuple, list):
+            (gw_data,) = gw_data
+        if len(gw_data.shape) == 2:
+            m1m2 = gw_data[:, :2]
             logpm1m2, _ = log_prob(m1m2, self.flows, self.base_dist)
-            z = input[:, 2]
+            z = gw_data[:, 2]
             logpz = torch.log(z_distribution(z.view(-1))).view(z.shape)
             logpm1m2z = logpm1m2 + logpz
             return logpm1m2z
 
-        elif len(input.shape) == 3:
+        elif len(gw_data.shape) == 3:
             return log_prob_sb(
-                input,
+                gw_data,
                 sel_input,
                 self,
                 self.sb_weight,
             )
         else:
-            raise ValueError('input must be 2 or 3 dimensional')
+            raise ValueError("input must be 2 or 3 dimensional")
 
     def forward(self, *args, **kwargs):
         return self.log_prob(*args, **kwargs)

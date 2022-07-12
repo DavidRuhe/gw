@@ -134,6 +134,11 @@ def main(config, experiment):
     bar = MeterlessProgressBar(refresh_rate=1)
     callback_chain.append(bar)
 
+    if USE_WANDB:
+        logger = loggers.WandbLogger(experiment=experiment, dir=config["dir"])
+    else:
+        logger = CSVLogger(config["dir"])
+
     class CSVLogger(loggers.CSVLogger):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, **kwargs)
@@ -151,11 +156,6 @@ def main(config, experiment):
 
                 fig.savefig(save_file, bbox_inches="tight", **kwargs)
                 fig.clf()
-
-    if USE_WANDB:
-        logger = loggers.WandbLogger(experiment=experiment, dir=config["dir"])
-    else:
-        logger = CSVLogger(config["dir"])
 
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),

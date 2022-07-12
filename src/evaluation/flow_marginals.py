@@ -1,4 +1,5 @@
 import os
+import numpy as np
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -7,41 +8,33 @@ import torch
 
 
 @torch.no_grad()
-def flow_marginals(dir, model, dataset, boundaries=(-1, 1), resolution=256, keys=None):
-    grid = torch.linspace(*boundaries, resolution)
-    d_grid = [grid] * dataset.dimensionality
-    meshgrid = torch.meshgrid(*d_grid, indexing="xy")
-    x = torch.stack(meshgrid).reshape(dataset.dimensionality, -1).permute(1, 0)
-    shape = [resolution] * dataset.dimensionality
-    prob = model.log_prob(x).exp().view(*shape)
+def flow_marginals(trainer, model, dataset, mode):
+    axes_names = []
+    axes = []
 
-    # d_grid = torch.stack(d_grid, dim=-1)
+    for n, ax in dataset.grid.items():
+        axes_names.append(n)
+        axes.append(ax)
 
-    # normalize = dataset.has_normalization
-    # if normalize:
-    #     d_grid = dataset.normalize_inverse(d_grid)
+    d = dataset.dimensionality
+    components = np.stack(np.meshgrid(*axes, indexing="xy")).reshape(d, -1)
 
-    for d in range(dataset.dimensionality):
+    resolutions = [len(ax) for ax in axes]
+    input = np.stack(components, axis=-1)
+    input = torch.from_numpy(input).float()
+    prob = model.log_prob(input).exp().view(*resolutions)
 
-        #     if keys is not None:
-        #         key = keys[d]
-        #     else:
-        #         key = d
+    numbered_axes = tuple(range(d))
 
-        plt.plot(grid, prob.sum(d), label=f"{d}")
-        plt.savefig(os.path.join(dir, f"marginal_{d}.png"), bbox_inches="tight")
+    for i in range(d):
+        axes_to_sum = tuple(numbered_axes[:i] + numbered_axes[i + 1 :])
+        fig = plt.figure()
+        plt.plot(axes[i], prob.sum(axes_to_sum), label=axes_names[i])
+
+        model.logger.log_image(
+            key=f"{mode}_marginal_%d" % i, images=[fig], step=trainer.global_step
+        )
         plt.close()
+        # plt.savefig(os.path.join(dir, "marginal_%d.png" % d), bbox_inches="tight")
+        # plt.close()
 
-    #     dimensions_to_sum = list(range(dataset.dimensionality))
-    #     dimensions_to_sum.pop(d)
-
-    #     if len(dimensions_to_sum) == 0:
-    #         marginal = prob
-    #     else:
-    #         marginal = prob.sum(dim=tuple(dimensions_to_sum))
-
-    #     plt.plot(d_grid[:, d].numpy(), marginal.numpy())
-    #     plt.title(key)
-    #     plt.tight_layout()
-    #     plt.savefig(os.path.join(dir, f"flow_marginals_{key}.png"), bbox_inches="tight")
-    #     plt.close()
