@@ -7,6 +7,7 @@ import numpy as np
 
 M_RNG = (0.2, 90)
 Z_RNG = (0.1, 3)
+CHI_RNG = (-1, 1)
 
 
 class ConcatDataset(torch.utils.data.Dataset):
@@ -29,6 +30,8 @@ def process_gw_data(path):
     m1min, m1max = float("inf"), -float("inf")
     m2min, m2max = float("inf"), -float("inf")
     zmin, zmax = float("inf"), -float("inf")
+
+    chimin, chimax = float("inf"), -float("inf")
     for n, event in events.items():
         m1 = torch.from_numpy(event["m1"]).float()
         m1 = m1.clamp(*M_RNG)
@@ -45,15 +48,20 @@ def process_gw_data(path):
         zmin = min(zmin, z.min())
         zmax = max(zmax, z.max())
 
-        x = torch.stack([m1, m2, z], dim=-1)
+        chi = torch.from_numpy(event["Xeff"]).float()
+        chi = chi.clamp(*CHI_RNG)
+        chimin = min(chimin, chi.min())
+        chimax = max(chimax, chi.max())
+
+        x = torch.stack([m1, m2, z, chi], dim=-1)
 
         datasets.append(torch.utils.data.TensorDataset(x))
 
     return ConcatDataset(*datasets), (m1min, m1max), (m2min, m2max), (zmin, zmax)
 
 
-class M1M2ZDataset:
-    dimensionality = 3
+class M1M2ZChiDataset:
+    dimensionality = 4
     has_normalization = True
 
     n_grid = 64
