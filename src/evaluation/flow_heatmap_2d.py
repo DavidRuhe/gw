@@ -9,9 +9,6 @@ import numpy as np
 
 @torch.no_grad()
 def flow_heatmap_2d(trainer, model, dataset, mode):
-    # grid = torch.linspace(*boundaries, resolution)
-    # meshgrid = torch.meshgrid(grid, grid, indexing="xy")
-    # x = torch.stack(meshgrid, dim=-1).reshape(-1, 2)
     axes_names = []
     axes = []
 
@@ -20,8 +17,6 @@ def flow_heatmap_2d(trainer, model, dataset, mode):
         axes.append(ax)
 
     x, y = np.stack(np.meshgrid(*axes, indexing="xy")).reshape(2, -1)
-    if dataset.has_normalization:
-        x, y = dataset.normalize_forward(x, y)
 
     resolutions = [len(ax) for ax in axes]
 
