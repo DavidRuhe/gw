@@ -13,6 +13,9 @@ from scipy.interpolate import interp1d
 # from cmath import log
 from astropy.cosmology import Planck18 as cosmo
 
+from models.planar import BayesianPlanar
+from utils.interp1d import Interp1d
+
 # import emcee
 
 # catalog_data = np.load(
@@ -45,14 +48,19 @@ z_axis = np.linspace(0, 10, 100000)
 dVdz = (
     cosmo.differential_comoving_volume(z_axis).value / 1e9 * 4 * np.pi
 )  # Astropy dVcdz is per stradian
-dVdz_interp = interp1d(z_axis, dVdz)
+# dVdz_interp = interp1d(z_axis, dVdz)
+z_axis = torch.from_numpy(z_axis)
+dVdz = torch.from_numpy(dVdz)
+
+dVdz_interp = lambda z: Interp1d()(z_axis, dVdz, z)
 
 
 def z_distribution_unnormalized(z):
+    # return torch.from_numpy(dVdz_interp(z)) * (1 + z) ** 1.7
     return dVdz_interp(z) * (1 + z) ** 1.7
 
 
-z_normalization = np.trapz(z_distribution_unnormalized(z_axis), z_axis)
+z_normalization = torch.trapz(z_distribution_unnormalized(z_axis), z_axis)
 
 
 def z_distribution(z):
@@ -81,9 +89,7 @@ def likelihood(m1m2z, model, z_distribution):
     return p_m1m2 * p_z
 
 
-def log_selection_bias(
-    flows, base_dist, model, selection_m1m2z, p_draw_m1m2z, selection_trials
-):
+def log_selection_bias(model, selection_m1m2z, p_draw_m1m2z, selection_trials):
     # p_m1m2z = likelihood(selection_m1m2z, model)
     # likelihood_samples = p_m1m2z / selection_x["p_draw_m1m2z"]
     # return np.sum(likelihood_samples / selection_data["nTrials"])
@@ -101,28 +107,21 @@ def log_selection_bias(
 
 
 def log_prob_sb(
-    x,
-    flows,
-    base_dist,
+    gw_data,
+    sel_data,
     model,
-    selection_m1m2z,
-    p_draw_m1m2z,
-    selection_trials,
     sb_weight,
 ):
 
-
-    m1m2z = x[:, :, :3]
+    m1m2z = gw_data[:, :, :3]
     logpm1m2z = model.log_prob(m1m2z.view(-1, 3)).view(m1m2z.shape[:-1])
-    q_z = x[:, :, 3] / 1e9  # z_prior, keep in mind.
+    q_z = gw_data[:, :, 3] / 1e9  # z_prior, keep in mind.
     logq = q_z.log()
     ll = torch.logsumexp(logpm1m2z - logq, dim=0)
 
     if sb_weight > 0:
 
-        sb = log_selection_bias(
-            flows, base_dist, model, selection_m1m2z, p_draw_m1m2z, selection_trials
-        )
+        sb = log_selection_bias(model, selection_m1m2z, p_draw_m1m2z, selection_trials)
         ll = ll + sb * sb_weight
 
     return ll
@@ -156,17 +155,17 @@ class NormalizingFlow(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         loss = self.step(batch, batch_idx)
-        self.log("train_loss", loss, on_epoch=True)
+        self.log("train_loss", loss, on_epoch=True, on_step=False)
         return loss
 
     def validation_step(self, batch, batch_idx):
         loss = self.step(batch, batch_idx)
-        self.log("val_loss", loss, prog_bar=True)
+        self.log("val_loss", loss, prog_bar=True, on_epoch=True, on_step=False)
         return loss
 
     def test_step(self, batch, batch_idx):
         loss = self.step(batch, batch_idx)
-        self.log("test_loss", loss, prog_bar=True)
+        self.log("test_loss", loss, prog_bar=True, on_epoch=True, on_step=False)
         return loss
 
 
@@ -210,44 +209,45 @@ class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
 
 
 class HierarchicalNormalizingFlowSB(NormalizingFlow):
-    def __init__(self, selection_data, sb_weight, *args, **kwargs):
+    def __init__(self, dataset, sb_weight, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.selection_data = selection_data
-        self.selection_m1m2z = torch.from_numpy(
-            np.stack(
-                [selection_data["m1"], selection_data["m2"], selection_data["z"]],
-                axis=-1,
-            )
-        ).float()
-        self.p_draw_m1m2z = torch.from_numpy(selection_data["p_draw_m1m2z"]).float()
-        self.selection_trials = torch.tensor(selection_data["nTrials"])
+        self.dataset = dataset
         self.sb_weight = sb_weight
 
     def step(self, batch, batch_idx):
-        (x,) = batch
+        (gw_data,), (sel_data,) = batch
+
         lp = log_prob_sb(
-            x,
-            self.flows,
-            self.base_dist,
+            gw_data,
+            sel_data,
             self,
-            self.selection_m1m2z,
-            self.p_draw_m1m2z,
-            self.selection_trials,
             self.sb_weight,
         )
+
         loss = -lp.mean(0)
         return loss
 
-    def log_prob(self, input):
-        assert len(input.shape) == 2
-        m1m2 = input[:, :2]
-        logpm1m2, _ = log_prob(m1m2, self.flows, self.base_dist)
-        z = input[:, 2]
-        logpz = torch.from_numpy(np.log(z_distribution(z.view(-1).numpy()))).view(
-            z.shape
-        )
-        logpm1m2z = logpm1m2 + logpz
-        return logpm1m2z
+    def log_prob(self, input, sel_input=None):
+        if len(input.shape) == 2:
+            m1m2 = input[:, :2]
+            logpm1m2, _ = log_prob(m1m2, self.flows, self.base_dist)
+            z = input[:, 2]
+            logpz = torch.log(z_distribution(z.view(-1))).view(z.shape)
+            logpm1m2z = logpm1m2 + logpz
+            return logpm1m2z
+
+        elif len(input.shape) == 3:
+            return log_prob_sb(
+                input,
+                sel_input,
+                self,
+                self.sb_weight,
+            )
+        else:
+            raise ValueError('input must be 2 or 3 dimensional')
+
+    def forward(self, *args, **kwargs):
+        return self.log_prob(*args, **kwargs)
 
     # def step(self, batch, batch_idx):
     #     (x,) = batch
@@ -294,3 +294,36 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
 #         prior = event_data["z_prior"] / 1e9
 #         events_posterior.append(posterior)
 #         events_prior.append(prior)
+
+
+class HierarchicalNormalizingBayesianFlowSB(HierarchicalNormalizingFlowSB):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def step(self, batch, batch_idx):
+        (gw_data,), (sel_data,) = batch
+
+        lp = log_prob_sb(
+            gw_data,
+            sel_data,
+            self,
+            self.sb_weight,
+        )
+
+        loss = -lp.mean(0)
+
+        h = self.entropy()
+        h = h / len(lp)
+
+        self.log("nll", loss, on_epoch=True, on_step=False)
+        self.log("h", h, on_epoch=True, on_step=False)
+        loss = loss + 1 * h
+        return loss
+
+    def entropy(self):
+        h = 0
+        for m in self.modules():
+            if isinstance(m, BayesianPlanar):
+                h += m.entropy()
+
+        return h

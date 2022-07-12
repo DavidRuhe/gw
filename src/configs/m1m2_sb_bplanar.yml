@@ -4,18 +4,18 @@ seed: 42
 model:
   lr: 0.001
   sb_weight: 0
+  object: models.normalizing_flow.HierarchicalNormalizingBayesianFlowSB
 
 loader:
   batch_size: 32
 
 flow:
+  object: models.planar.bayesian_planar
   input_dim: 2
 
 trainer:
   earlystopping:
     patience: 1
-  checkpoint:
-    save_top_k: -1
   min_epochs: 128
 
 dataset:

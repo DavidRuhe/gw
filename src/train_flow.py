@@ -109,7 +109,7 @@ def main(config, experiment):
         monitor = "train_loss"
 
     checkpoint = callbacks.ModelCheckpoint(
-        monitor=monitor, mode="min", dirpath=config["dir"]
+        monitor=monitor, mode="min", dirpath=config["dir"], **config['trainer'].pop("checkpoint")
     )
     callback_chain.append(checkpoint)
     earlystop = callbacks.EarlyStopping(
