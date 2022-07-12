@@ -69,10 +69,12 @@ class M1M2ZChiDataset:
     grid_m1 = np.linspace(*M_RNG, n_grid)
     grid_m2 = np.linspace(*M_RNG, n_grid)
     grid_z = np.linspace(*Z_RNG, n_grid)
+    grid_chi = np.linspace(*CHI_RNG, n_grid)
     grid = {
         "m1": grid_m1,
         "m2": grid_m2,
         "z": grid_z,
+        "chi": grid_chi,
     }
 
     def __init__(
