@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import os
 
 # import sklearn
 
@@ -82,6 +83,7 @@ class M1M2ZChiDataset:
         loader_kwargs={},
         train_batch_size=32,
     ):
+        path = os.path.join(os.environ['DATAROOT'], path)
 
         self.hierarchical = hierarchical
         self.train_batch_size = train_batch_size
