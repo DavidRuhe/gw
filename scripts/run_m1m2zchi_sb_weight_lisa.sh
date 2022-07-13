@@ -2,7 +2,7 @@
 
 experiment_name="m1m2zchi_sb_weight"
 for sb_weight in 0 1 0.5 0.1 0.00001; do
-    python_command="WANDB_ENABLED=TRUE sh main.sh configs/m1m2zchi_sb_planar.yml --train \
+    python_cmd="WANDB_ENABLED=TRUE sh main.sh configs/m1m2zchi_sb_planar.yml --train \
         --trainer.min_epochs=128 \
         --model.sb_weight=$sb_weight \
         --experiment.name=$experiment_name"_"$sb_weight \
