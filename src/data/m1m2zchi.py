@@ -34,29 +34,32 @@ def process_gw_data(path):
 
     chimin, chimax = float("inf"), -float("inf")
     for n, event in events.items():
-        m1 = torch.from_numpy(event["m1"]).float()
+        m1 = torch.from_numpy(event["m1"])
         m1 = m1.clamp(*M_RNG)
         m1min = min(m1min, m1.min())
         m1max = max(m1max, m1.max())
 
-        m2 = torch.from_numpy(event["m2"]).float()
+        m2 = torch.from_numpy(event["m2"])
         m2 = m2.clamp(*M_RNG)
         m2min = min(m2min, m2.min())
         m2max = max(m2max, m2.max())
 
-        z = torch.from_numpy(event["z"]).float()
+        z = torch.from_numpy(event["z"])
         z = z.clamp(*Z_RNG)
         zmin = min(zmin, z.min())
         zmax = max(zmax, z.max())
 
-        chi = torch.from_numpy(event["Xeff"]).float()
+        chi = torch.from_numpy(event["Xeff"])
         chi = chi.clamp(*CHI_RNG)
         chimin = min(chimin, chi.min())
         chimax = max(chimax, chi.max())
 
-        x = torch.stack([m1, m2, z, chi], dim=-1)
+        z_prior = torch.from_numpy(event["z_prior"])
+        chi_prior = torch.from_numpy(event["Xeff_priors"])
 
-        datasets.append(torch.utils.data.TensorDataset(x))
+        gw_data = torch.stack([m1, m2, z, chi, z_prior, chi_prior], dim=-1).float()
+
+        datasets.append(torch.utils.data.TensorDataset(gw_data))
 
     return ConcatDataset(*datasets), (m1min, m1max), (m2min, m2max), (zmin, zmax)
 
@@ -79,13 +82,13 @@ class M1M2ZChiDataset:
 
     def __init__(
         self,
-        path,
+        gw_path,
         hierarchical=True,
         train_val_test_split=(0.8, 0.1, 0.1),
         loader_kwargs={},
         train_batch_size=32,
     ):
-        path = os.path.join(os.environ['DATAROOT'], path)
+        gw_path = os.path.join(os.environ["DATAROOT"], gw_path)
 
         self.hierarchical = hierarchical
         self.train_batch_size = train_batch_size
@@ -93,7 +96,9 @@ class M1M2ZChiDataset:
         if not hierarchical:
             raise NotImplementedError
 
-        self.gw_data, self.m1minmax, self.m2minmax, self.zminmax = process_gw_data(path)
+        self.gw_data, self.m1minmax, self.m2minmax, self.zminmax = process_gw_data(
+            gw_path
+        )
         self.loader_kwargs = loader_kwargs
 
     def train_dataloader(self):
@@ -111,3 +116,60 @@ class M1M2ZChiDataset:
 
     def test_dataloader(self):
         return None
+
+
+def process_selection_data(path):
+    selection_data = np.load(path, allow_pickle=True)
+    m1 = torch.from_numpy(selection_data["m1"])
+    m1 = m1.clamp(*M_RNG)
+
+    m2 = torch.from_numpy(selection_data["m2"])
+    m2 = m2.clamp(*M_RNG)
+
+    z = torch.from_numpy(selection_data["z"])
+    z = z.clamp(*Z_RNG)
+
+    chi = torch.from_numpy(selection_data["Xeff"])
+    chi = chi.clamp(*CHI_RNG)
+
+    p_draw_m1m2z = torch.from_numpy(selection_data["p_draw_m1m2z"])
+    p_draw_chi = torch.from_numpy(selection_data["p_draw_chiEff"])
+
+    ntrials = selection_data["nTrials"]
+    ntrials = torch.tensor(ntrials).repeat(len(m1))
+
+    naccepted = len(m1)
+    naccepted = torch.tensor(naccepted).repeat(len(m1))
+
+    selection_data = torch.stack(
+        [m1, m2, z, chi, p_draw_m1m2z, p_draw_chi, ntrials, naccepted], dim=-1
+    ).float()
+
+    return torch.utils.data.TensorDataset(selection_data)
+
+
+class M1M2ZChiSBDataset(M1M2ZChiDataset):
+    def __init__(self, sb_path, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.sb_path = os.path.join(os.environ["DATAROOT"], sb_path)
+        self.sb_data = process_selection_data(self.sb_path)
+
+    def train_dataloader(self):
+        gw_data = self.gw_data
+        gw_loader = torch.utils.data.DataLoader(
+            gw_data,
+            batch_size=self.train_batch_size,
+            shuffle=True,
+            **self.loader_kwargs
+        )
+
+        sb_data = self.sb_data
+        sb_loader = torch.utils.data.DataLoader(
+            sb_data,
+            batch_size=self.train_batch_size,
+            shuffle=True,
+            **self.loader_kwargs
+        )
+        return gw_loader, sb_loader
+

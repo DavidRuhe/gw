@@ -12,4 +12,4 @@ trainer:
 flow:
   input_dim: 2
   num_transforms: 8
-  hidden_dims: [8]
+  hidden_dims: [32]

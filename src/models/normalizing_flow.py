@@ -89,21 +89,18 @@ def likelihood(m1m2z, model, z_distribution):
     return p_m1m2 * p_z
 
 
-def log_selection_bias(model, selection_m1m2z, p_draw_m1m2z, selection_trials):
-    # p_m1m2z = likelihood(selection_m1m2z, model)
-    # likelihood_samples = p_m1m2z / selection_x["p_draw_m1m2z"]
-    # return np.sum(likelihood_samples / selection_data["nTrials"])
-
-    # m1m2, z = (
-    #     selection_m1m2z[:, :2],
-    #     selection_m1m2z[:, 2],
-    # )
-    # logpm1m2, _ = log_prob(m1m2, flows, base_dist)
-    # logpz = torch.from_numpy(np.log(z_distribution(z.numpy())))
-    # logpm1m2z = logpm1m2 + logpz
-    logpm1m2z = model.log_prob(selection_m1m2z)
-    log_pdraw = p_draw_m1m2z.log()
-    return torch.logsumexp(logpm1m2z - log_pdraw, dim=0) - math.log(selection_trials)
+def log_selection_bias(model, selection_data):
+    x = selection_data[:, : model.d]
+    logp = model.log_prob(x)
+    p_drawm1m2z = selection_data[:, 4]
+    p_drawchi = selection_data[:, 5]
+    ntrials = selection_data[:, 6]
+    naccepted = selection_data[:, 7]
+    fraction = naccepted / ntrials
+    ntrials_eff = len(x) / fraction
+    return torch.logsumexp(logp - p_drawm1m2z - p_drawchi, dim=0) - torch.log(
+        ntrials_eff
+    )
 
 
 def log_prob_sb(
@@ -113,15 +110,18 @@ def log_prob_sb(
     sb_weight,
 ):
 
-    m1m2z = gw_data[:, :, :3]
-    logpm1m2z = model.log_prob(m1m2z.view(-1, 3)).view(m1m2z.shape[:-1])
-    q_z = gw_data[:, :, 3] / 1e9  # z_prior, keep in mind.
-    logq = q_z.log()
-    ll = torch.logsumexp(logpm1m2z - logq, dim=0)
+    m1m2zchi = gw_data[:, :, :4]
+    logp = model.log_prob(m1m2zchi.view(-1, 4)).view(m1m2zchi.shape[:-1])
+    q_z = gw_data[:, :, 4] / 1e9  # z_prior, keep in mind.
+    q_chieff = gw_data[:, :, 5]
+    # logq = q_z.log()
+    # ll = torch.logsumexp(logpm1m2z - logq, dim=0)
+    ll = torch.logsumexp(logp, dim=0)
 
     if sb_weight > 0:
 
-        sb = log_selection_bias(model, selection_m1m2z, p_draw_m1m2z, selection_trials)
+        sb = log_selection_bias(model, sel_data)
+        sb = sb.mean(0)
         ll = ll + sb * sb_weight
 
     return ll
@@ -191,8 +191,6 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
             lp = log_prob(x, self.flows, self.base_dist)
             return lp
 
-    
-
 
 class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
     def __init__(self, flows, *args, **kwargs):
@@ -238,26 +236,22 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
         loss = -lp.mean(0)
         return loss
 
-    def log_prob(self, gw_data, sel_input=None):
-        if type(gw_data) in (tuple, list):
-            (gw_data,) = gw_data
-        if len(gw_data.shape) == 2:
-            m1m2 = gw_data[:, :2]
-            logpm1m2, _ = log_prob(m1m2, self.flows, self.base_dist)
-            z = gw_data[:, 2]
-            logpz = torch.log(z_distribution(z.view(-1))).view(z.shape)
-            logpm1m2z = logpm1m2 + logpz
-            return logpm1m2z
+    # def log_prob(self, x):
+    #     logpx, _ = log_prob(x, self.flows, self.base_dist)
+    #     return logpx
+    # if type(gw_data) in (tuple, list):
+    #     (gw_data,) = gw_data
+    # if len(gw_data.shape) == 2:
 
-        elif len(gw_data.shape) == 3:
-            return log_prob_sb(
-                gw_data,
-                sel_input,
-                self,
-                self.sb_weight,
-            )
-        else:
-            raise ValueError("input must be 2 or 3 dimensional")
+    # elif len(gw_data.shape) == 3:
+    #     return log_prob_sb(
+    #         gw_data,
+    #         sel_input,
+    #         self,
+    #         self.sb_weight,
+    #     )
+    # else:
+    #     raise ValueError("input must be 2 or 3 dimensional")
 
     def forward(self, *args, **kwargs):
         return self.log_prob(*args, **kwargs)
