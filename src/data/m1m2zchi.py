@@ -68,7 +68,7 @@ class M1M2ZChiDataset:
     dimensionality = 4
     has_normalization = True
 
-    n_grid = 64
+    n_grid = 32
     grid_m1 = np.linspace(*M_RNG, n_grid)
     grid_m2 = np.linspace(*M_RNG, n_grid)
     grid_z = np.linspace(*Z_RNG, n_grid)

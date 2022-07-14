@@ -24,6 +24,26 @@ if USE_WANDB:
     import wandb
 
 
+class CSVLogger(loggers.CSVLogger):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def log_image(self, key, images, step=None, **kwargs) -> None:
+
+        if not isinstance(images, list):
+            raise TypeError(f'Expected a list as "images", found {type(images)}')
+
+        for i, fig in enumerate(images):
+            if step is not None:
+                save_file = os.path.join(self.log_dir, f"{key}_{step}_{i}.png")
+            else:
+                save_file = os.path.join(self.log_dir, f"{key}_{i}.png")
+
+            fig.savefig(save_file, bbox_inches="tight", **kwargs)
+            fig.clf()
+
+
+
 class EvaluationLoop(callbacks.Callback):
     def __init__(self, evaluation_config, dataset):
         self.evaluation_config = evaluation_config
@@ -54,6 +74,22 @@ class EvaluationLoop(callbacks.Callback):
         self._loop(trainer, model, mode="train")
 
 
+class SBSchedule(callbacks.Callback):
+    def __init__(self, sb_schedule):
+        assert (
+            len(sb_schedule) % 2 == 0
+        ), "SB schedule must be even with epoch, value pairs."
+        self.schedule = {
+            sb_schedule[i]: sb_schedule[i + 1] for i in range(0, len(sb_schedule), 2)
+        }
+
+    def on_epoch_start(self, trainer, model):
+        if trainer.current_epoch in self.schedule:
+            model.sb_weight = self.schedule[trainer.current_epoch]
+            print("\nUpdating SB weight to", model.sb_weight, "\n")
+        return super().on_epoch_start(trainer, model)
+
+
 def main(config, experiment):
 
     dataset = object_from_config(config, "dataset")(**config["dataset"])
@@ -82,6 +118,7 @@ def main(config, experiment):
     print(f"Parameters: {count_parameters(model)}")
 
     callback_chain = []
+    callback_chain.append(SBSchedule(config["trainer"].pop("sb_schedule")))
     if "evaluation" in config:
         evaluate = EvaluationLoop(
             evaluation_config=config["evaluation"],
@@ -96,7 +133,10 @@ def main(config, experiment):
         monitor = "train_loss"
 
     checkpoint = callbacks.ModelCheckpoint(
-        monitor=monitor, mode="min", dirpath=config["dir"], **config['trainer'].pop("checkpoint")
+        monitor=monitor,
+        mode="min",
+        dirpath=config["dir"],
+        **config["trainer"].pop("checkpoint"),
     )
     callback_chain.append(checkpoint)
     earlystop = callbacks.EarlyStopping(
@@ -138,24 +178,6 @@ def main(config, experiment):
         logger = loggers.WandbLogger(experiment=experiment, dir=config["dir"])
     else:
         logger = CSVLogger(config["dir"])
-
-    class CSVLogger(loggers.CSVLogger):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, **kwargs)
-
-        def log_image(self, key, images, step=None, **kwargs) -> None:
-
-            if not isinstance(images, list):
-                raise TypeError(f'Expected a list as "images", found {type(images)}')
-
-            for i, fig in enumerate(images):
-                if step is not None:
-                    save_file = os.path.join(self.log_dir, f"{key}_{step}_{i}.png")
-                else:
-                    save_file = os.path.join(self.log_dir, f"{key}_{i}.png")
-
-                fig.savefig(save_file, bbox_inches="tight", **kwargs)
-                fig.clf()
 
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),

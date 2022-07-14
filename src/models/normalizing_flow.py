@@ -182,14 +182,19 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
 
     def forward(self, batch):
 
-        (x,) = batch
+        if type(batch) in [list, tuple]:
+            (x,) = batch
+        else:
+            x = batch
+
         if len(x.shape) == 3:
+            x = x[:, :, : self.d].clone()
             lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
             lp = lp.view(x.shape[:-1])
             lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
         else:
-            lp = log_prob(x, self.flows, self.base_dist)
-            return lp
+            lp, y = log_prob(x, self.flows, self.base_dist)
+        return lp
 
 
 class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
