@@ -91,7 +91,7 @@ def likelihood(m1m2z, model, z_distribution):
 
 def log_selection_bias(model, selection_data):
     x = selection_data[:, : model.d]
-    logp = model.log_prob(x)
+    logp, _ = log_prob(x, model.flows, model.base_dist)
     p_drawm1m2z = selection_data[:, 4]
     p_drawchi = selection_data[:, 5]
     ntrials = selection_data[:, 6]
@@ -110,17 +110,21 @@ def log_prob_sb(
     sb_weight,
 ):
 
-    m1m2zchi = gw_data[:, :, :4]
-    logp = model.log_prob(m1m2zchi.view(-1, 4)).view(m1m2zchi.shape[:-1])
-    q_z = gw_data[:, :, 4] / 1e9  # z_prior, keep in mind.
-    q_chieff = gw_data[:, :, 5]
-    logq = q_z.log() + q_chieff.log()
-    ll = torch.logsumexp(logp - logq, dim=0)
+    x = gw_data[:, :, :model.d]
+    logp, _ = log_prob(x.view(-1, model.d), model.flows, model.base_dist)
+    logp = logp.view(x.shape[:-1])
+    q = torch.tensor(1.)
+    if model.d >= 3:
+        q = q * gw_data[:, :, 4] / 1e9  # z_prior, keep in mind.
+    if model.d >= 4:
+        q = q * gw_data[:, :, 5]
+    logq = q.log()
+    ll = torch.logsumexp(logp - logq, dim=0) - math.log(len(logp))
 
     if sb_weight > 0:
         sb = log_selection_bias(model, sel_data)
         sb = sb.mean(0)
-        ll = ll + sb * sb_weight
+        ll = ll - sb * sb_weight
 
     return ll
 
@@ -141,6 +145,9 @@ class NormalizingFlow(pl.LightningModule):
             self.trainable_flows = flows
 
     def log_prob(self, x):
+
+        if type(x) in (list, tuple):
+            (x,) = x
         lp, _ = log_prob(x, self.flows, self.base_dist)
         return lp
 
@@ -172,7 +179,7 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
 
     def step(self, batch, batch_idx):
         (x,) = batch
-        x = x[:, :, :self.d].clone()
+        x = x[:, :, : self.d].clone()
         lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
         lp = lp.view(x.shape[:-1])
         lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
@@ -240,22 +247,24 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
         loss = -lp.mean(0)
         return loss
 
-    # def log_prob(self, x):
-    #     logpx, _ = log_prob(x, self.flows, self.base_dist)
-    #     return logpx
-    # if type(gw_data) in (tuple, list):
-    #     (gw_data,) = gw_data
-    # if len(gw_data.shape) == 2:
+    def log_prob(self, gw_data, sel_data):
 
-    # elif len(gw_data.shape) == 3:
-    #     return log_prob_sb(
-    #         gw_data,
-    #         sel_input,
-    #         self,
-    #         self.sb_weight,
-    #     )
-    # else:
-    #     raise ValueError("input must be 2 or 3 dimensional")
+        if type(gw_data) in (tuple, list):
+            (gw_data,) = gw_data
+        if type(sel_data) in (tuple, list):
+            (sel_data,) = sel_data
+
+        if len(gw_data.shape) == 2:
+            raise NotImplementedError
+        elif len(gw_data.shape) == 3:
+            return log_prob_sb(
+                gw_data,
+                sel_data,
+                self,
+                self.sb_weight,
+            )
+        else:
+            raise ValueError("input must be 2 or 3 dimensional")
 
     def forward(self, *args, **kwargs):
         return self.log_prob(*args, **kwargs)

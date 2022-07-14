@@ -16,7 +16,7 @@ def flow_heatmap_2d(trainer, model, dataset, mode):
         axes_names.append(n)
         axes.append(ax)
 
-    x, y = np.stack(np.meshgrid(*axes, indexing="xy")).reshape(2, -1)
+    x, y = np.stack(np.meshgrid(*axes, indexing="ij")).reshape(2, -1)
 
     resolutions = [len(ax) for ax in axes]
 
@@ -33,27 +33,17 @@ def flow_heatmap_2d(trainer, model, dataset, mode):
             axes[0][-1],
             axes[1][0],
             axes[1][-1],
-        ),  # origin='lower' changes the order
+        ),
         aspect="auto",
     )
 
-    plt.xlabel(axes_names[0])  # origin='lower' changes the order
+    plt.xlabel(axes_names[0])
     plt.ylabel(axes_names[1])
     plt.tight_layout()
-    # plt.savefig(os.path.join(dir, "flow_heatmap_2d.png"), bbox_inches="tight")
     model.logger.log_image(
         key=f"{mode}_flow_heatmap_2d", images=[fig], step=trainer.global_step
     )
     plt.close()
-
-    for d in range(2):
-        fig = plt.figure()
-        plt.plot(axes[d], prob.sum(d), label=axes_names[d])
-        # plt.savefig(os.path.join(dir, "marginal_%d.png" % d), bbox_inches="tight")
-        model.logger.log_image(
-            key=f"{mode}_marginal_%d" % d, images=[fig], step=trainer.global_step
-        )
-        plt.close()
 
 
 @torch.no_grad()
@@ -65,7 +55,7 @@ def flow_heatmap_m1m2z(trainer, model, dataset, mode):
         axes_names.append(n)
         axes.append(ax)
 
-    m1, m2, z = np.stack(np.meshgrid(*axes, indexing="xy")).reshape(3, -1)
+    m1, m2, z = np.stack(np.meshgrid(*axes, indexing="ij")).reshape(3, -1)
 
     if dataset.has_normalization:
         raise NotImplementedError
@@ -89,11 +79,11 @@ def flow_heatmap_m1m2z(trainer, model, dataset, mode):
             axes[0][-1],
             axes[1][0],
             axes[1][-1],
-        ),  # origin='lower' changes the order
+        ),
         aspect="auto",
     )
 
-    plt.xlabel(axes_names[0])  # origin='lower' changes the order
+    plt.xlabel(axes_names[0])
     plt.ylabel(axes_names[1])
     plt.tight_layout()
 
@@ -129,7 +119,7 @@ def flow_heatmap_m1m2(trainer, model, dataset, mode):
         axes.append(ax)
 
     d = dataset.dimensionality
-    x = np.stack(np.meshgrid(*axes, indexing="xy")).reshape(d, -1)
+    x = np.stack(np.meshgrid(*axes, indexing="ij")).reshape(d, -1)
 
     resolutions = [len(ax) for ax in axes]
 
@@ -150,11 +140,11 @@ def flow_heatmap_m1m2(trainer, model, dataset, mode):
             axes[0][-1],
             axes[1][0],
             axes[1][-1],
-        ),  # origin='lower' changes the order
+        ),
         aspect="auto",
     )
 
-    plt.xlabel(axes_names[0])  # origin='lower' changes the order
+    plt.xlabel(axes_names[0])
     plt.ylabel(axes_names[1])
     plt.tight_layout()
 

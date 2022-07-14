@@ -12,7 +12,6 @@ def flow_marginals(
 ):
     # grid = torch.linspace(*boundaries, resolution)
     # d_grid = [grid] * dataset.dimensionality
-    # meshgrid = torch.meshgrid(*d_grid, indexing="xy")
     # x = torch.stack(meshgrid).reshape(dataset.dimensionality, -1).permute(1, 0)
     # shape = [resolution] * dataset.dimensionality
     prob = model(model.axes[0])

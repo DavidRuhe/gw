@@ -1,0 +1,2 @@
+object: "data.gaussian.SyntheticDataset"
+train_batch_size: 32

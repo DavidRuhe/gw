@@ -17,11 +17,10 @@ def flow_marginals(trainer, model, dataset, mode):
         axes.append(ax)
 
     d = dataset.dimensionality
-    components = np.stack(np.meshgrid(*axes, indexing="xy")).reshape(d, -1)
+    components = np.stack(np.meshgrid(*axes, indexing="ij")).reshape(d, -1).T
 
     resolutions = [len(ax) for ax in axes]
-    input = np.stack(components, axis=-1)
-    input = torch.from_numpy(input).float()
+    input = torch.from_numpy(components).float()
     prob = model.log_prob(input).exp().view(*resolutions)
 
     numbered_axes = tuple(range(d))
@@ -32,7 +31,7 @@ def flow_marginals(trainer, model, dataset, mode):
         plt.plot(axes[i], prob.sum(axes_to_sum), label=axes_names[i])
 
         model.logger.log_image(
-            key=f"{mode}_marginal_%d" % i, images=[fig], step=trainer.global_step
+            key=f"{mode}_marginal_%d" % i, images=[fig], step=trainer.current_epoch
         )
         plt.close()
         # plt.savefig(os.path.join(dir, "marginal_%d.png" % d), bbox_inches="tight")
