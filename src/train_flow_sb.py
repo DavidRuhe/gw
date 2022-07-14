@@ -118,7 +118,10 @@ def main(config, experiment):
     print(f"Parameters: {count_parameters(model)}")
 
     callback_chain = []
-    callback_chain.append(SBSchedule(config["trainer"].pop("sb_schedule")))
+    sb_schedule = config["trainer"].pop("sb_schedule")
+    if sb_schedule is not None:
+        callback_chain.append(SBSchedule(sb_schedule))
+
     if "evaluation" in config:
         evaluate = EvaluationLoop(
             evaluation_config=config["evaluation"],
