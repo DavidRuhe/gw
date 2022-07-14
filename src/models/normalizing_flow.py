@@ -114,12 +114,10 @@ def log_prob_sb(
     logp = model.log_prob(m1m2zchi.view(-1, 4)).view(m1m2zchi.shape[:-1])
     q_z = gw_data[:, :, 4] / 1e9  # z_prior, keep in mind.
     q_chieff = gw_data[:, :, 5]
-    # logq = q_z.log()
-    # ll = torch.logsumexp(logpm1m2z - logq, dim=0)
-    ll = torch.logsumexp(logp, dim=0)
+    logq = q_z.log() + q_chieff.log()
+    ll = torch.logsumexp(logp - logq, dim=0)
 
     if sb_weight > 0:
-
         sb = log_selection_bias(model, sel_data)
         sb = sb.mean(0)
         ll = ll + sb * sb_weight

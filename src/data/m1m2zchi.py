@@ -6,7 +6,7 @@ import os
 
 # from data.utils import get_k_folds, train_test_split
 
-M_RNG = (0.2, 90)
+M_RNG = (0.2, 100)
 Z_RNG = (0.1, 3)
 CHI_RNG = (-1, 1)
 
@@ -144,6 +144,7 @@ def process_selection_data(path):
     selection_data = torch.stack(
         [m1, m2, z, chi, p_draw_m1m2z, p_draw_chi, ntrials, naccepted], dim=-1
     ).float()
+    breakpoint()
 
     return torch.utils.data.TensorDataset(selection_data)
 
@@ -153,6 +154,7 @@ class M1M2ZChiSBDataset(M1M2ZChiDataset):
         super().__init__(*args, **kwargs)
 
         self.sb_path = os.path.join(os.environ["DATAROOT"], sb_path)
+        breakpoint()
         self.sb_data = process_selection_data(self.sb_path)
 
     def train_dataloader(self):
