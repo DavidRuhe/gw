@@ -144,7 +144,6 @@ def process_selection_data(path):
     selection_data = torch.stack(
         [m1, m2, z, chi, p_draw_m1m2z, p_draw_chi, ntrials, naccepted], dim=-1
     ).float()
-    breakpoint()
 
     return torch.utils.data.TensorDataset(selection_data)
 
@@ -154,7 +153,6 @@ class M1M2ZChiSBDataset(M1M2ZChiDataset):
         super().__init__(*args, **kwargs)
 
         self.sb_path = os.path.join(os.environ["DATAROOT"], sb_path)
-        breakpoint()
         self.sb_data = process_selection_data(self.sb_path)
 
     def train_dataloader(self):
@@ -174,4 +172,3 @@ class M1M2ZChiSBDataset(M1M2ZChiDataset):
             **self.loader_kwargs
         )
         return gw_loader, sb_loader
-

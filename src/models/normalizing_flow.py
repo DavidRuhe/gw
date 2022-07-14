@@ -114,6 +114,7 @@ def log_prob_sb(
     logp = model.log_prob(m1m2zchi.view(-1, 4)).view(m1m2zchi.shape[:-1])
     q_z = gw_data[:, :, 4] / 1e9  # z_prior, keep in mind.
     q_chieff = gw_data[:, :, 5]
+    breakpoint()
     logq = q_z.log() + q_chieff.log()
     ll = torch.logsumexp(logp - logq, dim=0)
 
