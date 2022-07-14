@@ -174,6 +174,7 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
 
     def step(self, batch, batch_idx):
         (x,) = batch
+        x = x[:, :, :self.d].clone()
         lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
         lp = lp.view(x.shape[:-1])
         lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])

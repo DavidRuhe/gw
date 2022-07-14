@@ -117,3 +117,48 @@ def flow_heatmap_m1m2z(trainer, model, dataset, mode):
         plt.close()
         # plt.savefig(os.path.join(dir, "marginal_%d.png" % d), bbox_inches="tight")
         # plt.close()
+
+
+@torch.no_grad()
+def flow_heatmap_m1m2(trainer, model, dataset, mode):
+    axes_names = []
+    axes = []
+
+    for n, ax in dataset.grid.items():
+        axes_names.append(n)
+        axes.append(ax)
+
+    d = dataset.dimensionality
+    x = np.stack(np.meshgrid(*axes, indexing="xy")).reshape(d, -1)
+
+    resolutions = [len(ax) for ax in axes]
+
+    input = np.stack(x, axis=-1)
+    input = torch.from_numpy(input).float()
+    prob = model.log_prob(input).exp().view(*resolutions)
+
+    numbered_axes = tuple(range(d))
+    axes_to_sum = numbered_axes[2:]
+    pm1m2 = prob.sum(dim=axes_to_sum)
+    fig = plt.figure(figsize=(16, 16), facecolor="white")
+    plt.imshow(
+        pm1m2,
+        cmap="jet",
+        origin="lower",
+        extent=(
+            axes[0][0],
+            axes[0][-1],
+            axes[1][0],
+            axes[1][-1],
+        ),  # origin='lower' changes the order
+        aspect="auto",
+    )
+
+    plt.xlabel(axes_names[0])  # origin='lower' changes the order
+    plt.ylabel(axes_names[1])
+    plt.tight_layout()
+
+    model.logger.log_image(
+        key=f"{mode}_flow_heatmap_m1m2", images=[fig], step=trainer.global_step
+    )
+    plt.close()
