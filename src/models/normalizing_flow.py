@@ -122,13 +122,13 @@ def log_prob_sb(
     logq = q.log()
     ll = torch.logsumexp(logp - prior_weight * logq, dim=0) - math.log(len(logp))
 
-    model.log("log_prob", ll, on_epoch=True, on_step=False)
+    model.log("log_prob", ll.mean(), on_epoch=True, on_step=False)
 
     if sb_weight > 0:
         if sel_data is not None:
             sb = log_selection_bias(model, sel_data)
             sb = sb.mean(0)
-            model.log("log_selection_bias", sb, on_epoch=True, on_step=False)
+            model.log("log_selection_bias", sb.mean(), on_epoch=True, on_step=False)
             ll = ll - sb * sb_weight
         else:
             print("Warning: no selection bias data provided.")
