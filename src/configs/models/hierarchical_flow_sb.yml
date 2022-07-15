@@ -1,0 +1,5 @@
+object: models.normalizing_flow.HierarchicalNormalizingFlowSB
+lr: 0.005
+sb_weight: 0.0
+ckpt: null
+prior_weight: 0

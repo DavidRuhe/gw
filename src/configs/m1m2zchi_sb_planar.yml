@@ -1,0 +1,25 @@
+# Should be first line.
+command: python train_flow_sb.py -D configs/data/m1m2zchi_sb.yml -F configs/flows/planar.yml -M configs/models/hierarchical_flow_sb.yml -E configs/evaluation/flow_marginals.yml -T configs/trainers/sb_trainer.yml
+seed: 42
+model:
+  lr: 0.001
+  sb_weight: 0
+
+loader:
+  batch_size: 32
+
+flow:
+  input_dim: 4
+  num_layers: 10
+
+trainer:
+  earlystopping:
+    patience: 1
+  min_epochs: 256
+  limit_train_batches: 1024
+  # schedules:
+  #   sb_weight: [0, 0]
+  #   prior_weight: [0, 0]
+
+dataset:
+  train_val_test_split: [0.0, 1.0, 0.0]

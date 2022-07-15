@@ -1,0 +1,5 @@
+object: "data.m1m2_sb.M1M2SBDataset"
+sample_path: "/Users/druhe/Projects/gw/datasets/sampleDict_FAR_1_in_1_yr.pickle"
+injection_path: "/Users/druhe/Projects/gw/datasets/injectionDict_FAR_1_in_1.pickle"
+gw_train_batch_size: 32
+sel_train_batch_size: 32

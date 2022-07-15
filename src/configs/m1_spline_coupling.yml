@@ -1,0 +1,12 @@
+# Should be first line.
+command: python train_flow.py -D configs/data/m1.yml -F configs/flows/spline_coupling.yml -M configs/models/hierarchical_flow.yml -E configs/evaluation/flow_marginals.yml
+
+seed: 42
+model:
+  lr: 0.005
+
+loader:
+  batch_size: 4
+
+trainer:
+  min_epochs: 3

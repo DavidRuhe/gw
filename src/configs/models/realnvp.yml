@@ -1,2 +1,0 @@
-object: models.realnvp.RealNVP
-lr: 2.e-4

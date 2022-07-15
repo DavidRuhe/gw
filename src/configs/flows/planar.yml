@@ -1,0 +1,3 @@
+object: "models.planar.planar"
+input_dim: 1
+num_layers: 8

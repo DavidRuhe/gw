@@ -23,7 +23,9 @@ class ToyDataset(torch.utils.data.TensorDataset):
     dimensionality = 2
     hierarchical = False
 
-    def __init__(self, name, split, fold=0, test_size=0.1):
+    def __init__(self, name, split, fold=0, test_size=0.1, hierarchical=False):
+
+        self.hierarchical = hierarchical
 
         self.data = load_data(name)
         self.test_data, self.train_data = train_test_split(
