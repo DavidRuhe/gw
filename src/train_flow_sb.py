@@ -43,7 +43,6 @@ class CSVLogger(loggers.CSVLogger):
             fig.clf()
 
 
-
 class EvaluationLoop(callbacks.Callback):
     def __init__(self, evaluation_config, dataset):
         self.evaluation_config = evaluation_config
@@ -74,19 +73,29 @@ class EvaluationLoop(callbacks.Callback):
         self._loop(trainer, model, mode="train")
 
 
-class SBSchedule(callbacks.Callback):
-    def __init__(self, sb_schedule):
-        assert (
-            len(sb_schedule) % 2 == 0
-        ), "SB schedule must be even with epoch, value pairs."
-        self.schedule = {
-            sb_schedule[i]: sb_schedule[i + 1] for i in range(0, len(sb_schedule), 2)
-        }
+class PropertyScheduler(callbacks.Callback):
+    def __init__(self, schedules):
+
+        self.schedules = {k: {} for k in schedules if schedules[k] is not None}
+        for k in self.schedules:
+            assert (
+                len(schedules[k]) % 2 == 0
+            ), f"{k} schedule must be even with epoch, value pairs."
+
+            self.schedules[k] = {
+                schedules[k][i]: schedules[k][i + 1]
+                for i in range(0, len(schedules[k]), 2)
+            }
 
     def on_epoch_start(self, trainer, model):
-        if trainer.current_epoch in self.schedule:
-            model.sb_weight = self.schedule[trainer.current_epoch]
-            print("\nUpdating SB weight to", model.sb_weight, "\n")
+        for k in self.schedules:
+            if trainer.current_epoch in self.schedules[k]:
+                setattr(model, k, self.schedules[k][trainer.current_epoch])
+
+        print("\n\nUpdated model properties:")
+        for k in self.schedules:
+            print(f"{k}: {getattr(model, k)}")
+        print("\n")
         return super().on_epoch_start(trainer, model)
 
 
@@ -118,9 +127,8 @@ def main(config, experiment):
     print(f"Parameters: {count_parameters(model)}")
 
     callback_chain = []
-    sb_schedule = config["trainer"].pop("sb_schedule")
-    if sb_schedule is not None:
-        callback_chain.append(SBSchedule(sb_schedule))
+    if "scheduler" in config["trainer"]:
+        callback_chain.append(PropertyScheduler(config["trainer"].pop("scheduler")))
 
     if "evaluation" in config:
         evaluate = EvaluationLoop(
@@ -295,7 +303,7 @@ if __name__ == "__main__":
     )
     run_args = run_config["trainer"] if "trainer" in run_config else {}
     trainer_config = load_yaml(trainer_config_path)
-    add_group(parser, run_args, trainer_config, "trainer")
+    add_group(parser, run_args, flatten(trainer_config), "trainer")
 
     evaluation_config_paths = pop_configs_from_sys_argv("-E", default=[])
 

@@ -29,16 +29,16 @@ def flow_heatmap_2d(trainer, model, dataset, mode):
         cmap="jet",
         origin="lower",
         extent=(
-            axes[0][0],
-            axes[0][-1],
             axes[1][0],
             axes[1][-1],
+            axes[0][0],
+            axes[0][-1],
         ),
         aspect="auto",
     )
 
-    plt.xlabel(axes_names[0])
-    plt.ylabel(axes_names[1])
+    plt.xlabel(axes_names[1])
+    plt.ylabel(axes_names[0])
     plt.tight_layout()
     model.logger.log_image(
         key=f"{mode}_flow_heatmap_2d", images=[fig], step=trainer.global_step
@@ -75,16 +75,16 @@ def flow_heatmap_m1m2z(trainer, model, dataset, mode):
         cmap="jet",
         origin="lower",
         extent=(
-            axes[0][0],
-            axes[0][-1],
             axes[1][0],
             axes[1][-1],
+            axes[0][0],
+            axes[0][-1],
         ),
         aspect="auto",
     )
 
-    plt.xlabel(axes_names[0])
-    plt.ylabel(axes_names[1])
+    plt.xlabel(axes_names[1])
+    plt.ylabel(axes_names[0])
     plt.tight_layout()
 
     model.logger.log_image(
@@ -136,16 +136,16 @@ def flow_heatmap_m1m2(trainer, model, dataset, mode):
         cmap="jet",
         origin="lower",
         extent=(
-            axes[0][0],
-            axes[0][-1],
             axes[1][0],
             axes[1][-1],
+            axes[0][0],
+            axes[0][-1],
         ),
         aspect="auto",
     )
 
-    plt.xlabel(axes_names[0])
-    plt.ylabel(axes_names[1])
+    plt.xlabel(axes_names[1])
+    plt.ylabel(axes_names[0])
     plt.tight_layout()
 
     model.logger.log_image(

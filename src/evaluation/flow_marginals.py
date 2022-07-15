@@ -37,3 +37,28 @@ def flow_marginals(trainer, model, dataset, mode):
         # plt.savefig(os.path.join(dir, "marginal_%d.png" % d), bbox_inches="tight")
         # plt.close()
 
+    # Hacky to put it here, but let's keep it for now
+    axes_to_sum = numbered_axes[2:]
+    pm1m2 = prob.sum(dim=axes_to_sum)
+    fig = plt.figure(figsize=(16, 16), facecolor="white")
+    plt.imshow(
+        pm1m2,
+        cmap="jet",
+        origin="lower",
+        extent=(
+            axes[1][0],
+            axes[1][-1],
+            axes[0][0],
+            axes[0][-1],
+        ),
+        aspect="auto",
+    )
+
+    plt.xlabel(axes_names[1])
+    plt.ylabel(axes_names[0])
+    plt.tight_layout()
+
+    model.logger.log_image(
+        key=f"{mode}_flow_heatmap_m1m2", images=[fig], step=trainer.global_step
+    )
+    plt.close()

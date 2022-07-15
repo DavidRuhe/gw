@@ -16,8 +16,10 @@ trainer:
   earlystopping:
     patience: 1
   min_epochs: 256
-  # sb_schedule: [0, 0.1, 96, 0.5, 128, 1]
-  sb_schedule: null 
+  limit_train_batches: 1024
+  # schedules:
+  #   sb_weight: [0, 0]
+  #   prior_weight: [0, 0]
 
 dataset:
   train_val_test_split: [0.0, 1.0, 0.0]

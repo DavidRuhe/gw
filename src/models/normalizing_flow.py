@@ -108,18 +108,19 @@ def log_prob_sb(
     sel_data,
     model,
     sb_weight,
+    prior_weight,
 ):
 
     x = gw_data[:, :, :model.d]
     logp, _ = log_prob(x.view(-1, model.d), model.flows, model.base_dist)
     logp = logp.view(x.shape[:-1])
     q = torch.tensor(1.)
-    if model.d >= 3:
+    if model.d >= 3 and gw_data.shape[-1] > 4:
         q = q * gw_data[:, :, 4] / 1e9  # z_prior, keep in mind.
-    if model.d >= 4:
+    if model.d >= 4 and gw_data.shape[-1] > 5:
         q = q * gw_data[:, :, 5]
     logq = q.log()
-    ll = torch.logsumexp(logp - logq, dim=0) - math.log(len(logp))
+    ll = torch.logsumexp(logp - prior_weight * logq, dim=0) - math.log(len(logp))
 
     if sb_weight > 0:
         sb = log_selection_bias(model, sel_data)
@@ -230,9 +231,10 @@ class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
 
 
 class HierarchicalNormalizingFlowSB(NormalizingFlow):
-    def __init__(self, sb_weight, *args, **kwargs):
+    def __init__(self, sb_weight, prior_weight, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.sb_weight = sb_weight
+        self.prior_weight = prior_weight
 
     def step(self, batch, batch_idx):
         (gw_data,), (sel_data,) = batch
@@ -242,12 +244,13 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
             sel_data,
             self,
             self.sb_weight,
+            self.prior_weight,
         )
 
         loss = -lp.mean(0)
         return loss
 
-    def log_prob(self, gw_data, sel_data):
+    def log_prob(self, gw_data, sel_data=None):
 
         if type(gw_data) in (tuple, list):
             (gw_data,) = gw_data
@@ -255,16 +258,16 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
             (sel_data,) = sel_data
 
         if len(gw_data.shape) == 2:
-            raise NotImplementedError
-        elif len(gw_data.shape) == 3:
-            return log_prob_sb(
-                gw_data,
-                sel_data,
-                self,
-                self.sb_weight,
-            )
-        else:
-            raise ValueError("input must be 2 or 3 dimensional")
+            print("Got 2D data, reshaping to 3D")
+            gw_data = gw_data[None]
+
+        return log_prob_sb(
+            gw_data,
+            sel_data,
+            self,
+            self.sb_weight,
+            self.prior_weight,
+        )
 
     def forward(self, *args, **kwargs):
         return self.log_prob(*args, **kwargs)
