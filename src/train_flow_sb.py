@@ -88,14 +88,17 @@ class PropertyScheduler(callbacks.Callback):
             }
 
     def on_epoch_start(self, trainer, model):
+        anything_changed = False
         for k in self.schedules:
             if trainer.current_epoch in self.schedules[k]:
                 setattr(model, k, self.schedules[k][trainer.current_epoch])
+                anything_changed = True
 
-        print("\n\nUpdated model properties:")
-        for k in self.schedules:
-            print(f"{k}: {getattr(model, k)}")
-        print("\n")
+        if anything_changed:
+            print("\n\nUpdated model properties:")
+            for k in self.schedules:
+                print(f"{k}: {getattr(model, k)}")
+            print("\n")
         return super().on_epoch_start(trainer, model)
 
 
