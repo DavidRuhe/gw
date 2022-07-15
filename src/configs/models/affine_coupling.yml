@@ -1,2 +1,0 @@
-object: "models.affine_coupling.AffineCouplingFlow"
-num_layers: 16

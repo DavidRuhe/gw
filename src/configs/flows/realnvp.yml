@@ -1,4 +1,0 @@
-object: models.realnvp.realnvp
-num_transforms: 10
-input_dim: 2
-hidden_dims: [32]
