@@ -93,6 +93,7 @@ class PropertyScheduler(callbacks.Callback):
             if trainer.current_epoch in self.schedules[k]:
                 setattr(model, k, self.schedules[k][trainer.current_epoch])
                 anything_changed = True
+                model.log(getattr(model, k), k)
 
         if anything_changed:
             print("\n\nUpdated model properties:")
