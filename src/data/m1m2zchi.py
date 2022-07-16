@@ -1,14 +1,57 @@
 import torch
 import numpy as np
 import os
+import random
+from itertools import cycle
+import math
 
-# import sklearn
-
-# from data.utils import get_k_folds, train_test_split
 
 M_RNG = (0.2, 100)
 Z_RNG = (0.1, 3)
 CHI_RNG = (-1, 1)
+
+
+class DataLoader:
+    batches = None
+
+    def __init__(self, data, batch_size, shuffle=True):
+
+        self.data = data
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.data_length = len(self.data)
+
+    def __iter__(self):
+
+        indices = list(reversed(range(0, self.data_length)))
+        if self.shuffle:
+            random.shuffle(indices)
+
+        self.batches = [
+            indices[i : i + self.batch_size]
+            for i in range(0, self.data_length, self.batch_size)
+        ]
+        return self
+
+    def __next__(self):
+        if len(self.batches) > 0:
+            return self.data[self.batches.pop()]
+        raise StopIteration
+
+    def __len__(self):
+        return math.ceil(len(self.data) / self.batch_size)
+
+
+class TensorDataset:
+    def __init__(self, tensor):
+        self.tensor = tensor
+        self.len = len(tensor)
+
+    def __getitem__(self, index):
+        return self.tensor[index]
+
+    def __len__(self):
+        return self.len
 
 
 class ConcatDataset(torch.utils.data.Dataset):
@@ -18,11 +61,46 @@ class ConcatDataset(torch.utils.data.Dataset):
         super().__init__()
 
     def __getitem__(self, index):
-        assert index < self.len
-        return (torch.cat([torch.stack(d[index % len(d)]) for d in self.datasets]),)
+        if isinstance(index, slice):
+            index = list(range(*index.indices(len(self))))
+        index = torch.tensor(index)
+        return torch.stack([d[index % len(d)] for d in self.datasets], dim=1)
 
     def __len__(self):
         return self.len
+
+    def __len__(self):
+        return self.len
+
+
+class ConcatDataLoader:
+    iterable = None
+
+    def __init__(self, *dataloaders):
+        self.dataloaders = dataloaders
+
+        i, max_size = None, 0
+        for j, loader in enumerate(self.dataloaders):
+            length = len(loader)
+            if len(loader) > max_size:
+                i, max_size = j, length
+        self.i = i
+        self.max_size = max_size
+
+    def __iter__(self):
+
+        loaders = [
+            loader if j == self.i else cycle(loader)
+            for j, loader in enumerate(self.dataloaders)
+        ]
+        self.iterable = iter(zip(*loaders))
+        return self
+
+    def __next__(self):
+        return next(self.iterable)
+
+    def __len__(self):
+        return self.max_size
 
 
 def process_gw_data(path):
@@ -59,9 +137,11 @@ def process_gw_data(path):
 
         gw_data = torch.stack([m1, m2, z, chi, z_prior, chi_prior], dim=-1).float()
 
-        datasets.append(torch.utils.data.TensorDataset(gw_data))
+        datasets.append(TensorDataset(gw_data))
 
-    return ConcatDataset(*datasets), (m1min, m1max), (m2min, m2max), (zmin, zmax)
+    dataset = ConcatDataset(*datasets)
+
+    return dataset
 
 
 class M1M2ZChiDataset:
@@ -87,23 +167,23 @@ class M1M2ZChiDataset:
         train_val_test_split=(0.8, 0.1, 0.1),
         loader_kwargs={},
         train_batch_size=32,
+        val_batch_size=32,
     ):
         gw_path = os.path.join(os.environ["DATAROOT"], gw_path)
 
         self.hierarchical = hierarchical
         self.train_batch_size = train_batch_size
+        self.val_batch_size = val_batch_size
 
         if not hierarchical:
             raise NotImplementedError
 
-        self.gw_data, self.m1minmax, self.m2minmax, self.zminmax = process_gw_data(
-            gw_path
-        )
+        self.gw_data = process_gw_data(gw_path)
         self.loader_kwargs = loader_kwargs
 
     def train_dataloader(self):
         gw_data = self.gw_data
-        gw_loader = torch.utils.data.DataLoader(
+        gw_loader = DataLoader(
             gw_data,
             batch_size=self.train_batch_size,
             shuffle=True,
@@ -145,7 +225,7 @@ def process_selection_data(path):
         [m1, m2, z, chi, p_draw_m1m2z, p_draw_chi, ntrials, naccepted], dim=-1
     ).float()
 
-    return torch.utils.data.TensorDataset(selection_data)
+    return TensorDataset(selection_data)
 
 
 class M1M2ZChiSBDataset(M1M2ZChiDataset):
@@ -157,7 +237,7 @@ class M1M2ZChiSBDataset(M1M2ZChiDataset):
 
     def train_dataloader(self):
         gw_data = self.gw_data
-        gw_loader = torch.utils.data.DataLoader(
+        gw_loader = DataLoader(
             gw_data,
             batch_size=self.train_batch_size,
             shuffle=True,
@@ -165,10 +245,22 @@ class M1M2ZChiSBDataset(M1M2ZChiDataset):
         )
 
         sb_data = self.sb_data
-        sb_loader = torch.utils.data.DataLoader(
+        sb_loader = DataLoader(
             sb_data,
             batch_size=self.train_batch_size,
             shuffle=True,
             **self.loader_kwargs
         )
-        return gw_loader, sb_loader
+        return ConcatDataLoader(gw_loader, sb_loader)
+
+    def val_dataloader(self):
+        gw_data = self.gw_data
+        gw_loader = DataLoader(
+            gw_data, batch_size=self.val_batch_size, shuffle=False, **self.loader_kwargs
+        )
+
+        sb_data = self.sb_data
+        sb_loader = DataLoader(
+            sb_data, batch_size=self.val_batch_size, shuffle=False, **self.loader_kwargs
+        )
+        return ConcatDataLoader(gw_loader, sb_loader)

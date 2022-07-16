@@ -16,6 +16,7 @@ def set_seed(seed: int, workers: bool = False):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
+    torch.use_deterministic_algorithms(True)
     os.environ["PL_GLOBAL_SEED"] = str(seed)
     if workers:
         os.environ["PL_SEED_WORKERS"] = f"{int(workers)}"

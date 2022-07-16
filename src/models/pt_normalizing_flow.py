@@ -1,18 +1,10 @@
 import math
-import pyro.distributions as dist
 import torch
-import pyro.distributions.transforms as T
 from torch import nn
 from collections.abc import Iterable
 
 import numpy as np
-
-from scipy.interpolate import interp1d
-
-# from cmath import log
 from astropy.cosmology import Planck18 as cosmo
-
-from models.planar import BayesianPlanar
 from utils.interp1d import Interp1d
 
 # import emcee
@@ -40,30 +32,30 @@ from utils.interp1d import Interp1d
 
 #     return log_likelihood
 
-M_RNG = (0.2, 100)
+# M_RNG = (0.2, 100)
 
 
-z_axis = np.linspace(0, 10, 100000)
-dVdz = (
-    cosmo.differential_comoving_volume(z_axis).value / 1e9 * 4 * np.pi
-)  # Astropy dVcdz is per stradian
-# dVdz_interp = interp1d(z_axis, dVdz)
-z_axis = torch.from_numpy(z_axis)
-dVdz = torch.from_numpy(dVdz)
+# z_axis = np.linspace(0, 10, 100000)
+# dVdz = (
+#     cosmo.differential_comoving_volume(z_axis).value / 1e9 * 4 * np.pi
+# )  # Astropy dVcdz is per stradian
+# # dVdz_interp = interp1d(z_axis, dVdz)
+# z_axis = torch.from_numpy(z_axis)
+# dVdz = torch.from_numpy(dVdz)
 
-dVdz_interp = lambda z: Interp1d()(z_axis, dVdz, z)
-
-
-def z_distribution_unnormalized(z):
-    # return torch.from_numpy(dVdz_interp(z)) * (1 + z) ** 1.7
-    return dVdz_interp(z) * (1 + z) ** 1.7
+# dVdz_interp = lambda z: Interp1d()(z_axis, dVdz, z)
 
 
-z_normalization = torch.trapz(z_distribution_unnormalized(z_axis), z_axis)
+# def z_distribution_unnormalized(z):
+#     # return torch.from_numpy(dVdz_interp(z)) * (1 + z) ** 1.7
+#     return dVdz_interp(z) * (1 + z) ** 1.7
 
 
-def z_distribution(z):
-    return dVdz_interp(z) * (1 + z) ** 1.7 / z_normalization
+# z_normalization = torch.trapz(z_distribution_unnormalized(z_axis), z_axis)
+
+
+# def z_distribution(z):
+#     return dVdz_interp(z) * (1 + z) ** 1.7 / z_normalization
 
 
 def log_prob(x, transforms, base_dist):
@@ -78,19 +70,11 @@ def log_prob(x, transforms, base_dist):
     return log_prob, y
 
 
-def likelihood(m1m2z, model, z_distribution):
-    # p_m1 = truncated_powerlaw(x[:, 0], params[0], params[1], params[2])
-    # p_m2 = M2_distribution(x[:, 1], x[:, 0], mmin=0)
-
-    m1m2 = m1m2z[:, :2]
-    p_m1m2 = model.log_prob(m1m2).exp()
-    p_z = z_distribution(m1m2z[:, 2])
-    return p_m1m2 * p_z
-
-
 def log_selection_bias(model, selection_data):
     x = selection_data[:, : model.d]
-    logp, _ = log_prob(x, model.flows, model.base_dist)
+    logp, _ = log_prob(
+        x, model.flows, model.base_dist(model.base_mean, model.base_logvar.exp())
+    )
     p_drawm1m2z = selection_data[:, 4]
     p_drawchi = selection_data[:, 5]
     ntrials = selection_data[:, 6]
@@ -111,7 +95,11 @@ def log_prob_sb(
 ):
 
     x = gw_data[:, :, : model.d]
-    logp, _ = log_prob(x.view(-1, model.d), model.flows, model.base_dist)
+    logp, _ = log_prob(
+        x.view(-1, model.d),
+        model.flows,
+        model.base_dist(model.base_mean, model.base_logvar.exp()),
+    )
     logp = logp.view(x.shape[:-1])
     q = torch.tensor(1.0)
     if model.d >= 3 and gw_data.shape[-1] > 4:
@@ -121,37 +109,34 @@ def log_prob_sb(
     logq = q.log()
     ll = torch.logsumexp(logp - prior_weight * logq, dim=0) - math.log(len(logp))
 
-    # model.log("log_prob", ll.mean(), on_epoch=True, on_step=False)
-
+    sb = None
     if sb_weight > 0:
         if sel_data is not None:
             sb = log_selection_bias(model, sel_data)
             sb = sb.mean(0)
-            # model.log("log_selection_bias", sb.mean(), on_epoch=True, on_step=False)
-            ll = ll - sb * sb_weight
+            loss = ll - sb * sb_weight
         else:
             print("Warning: no selection bias data provided.")
+    else:
+        loss = ll
 
-    return ll
+    return loss, ll, sb
 
 
 class Model(nn.Module):
-    def __init__(self, device="auto"):
+    def __init__(self) -> None:
         super().__init__()
-
-        if device == "auto":
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.device = torch.device(device)
-        self.to(self.device)
 
 
 class NormalizingFlow(Model):
-    def __init__(self, dataset, flows):
+    def __init__(self, dataset, flows, lr=1.0e-3):
         super().__init__()
-
         self.flows = flows
         self.d = dataset.dimensionality
-        self.base_dist = dist.Normal(torch.zeros(self.d), torch.ones(self.d))
+        self.base_mean = nn.Parameter(torch.zeros(self.d), requires_grad=True)
+        self.base_logvar = nn.Parameter(torch.zeros(self.d), requires_grad=True)
+        self.base_dist = torch.distributions.Normal
+        self.lr = lr
         if isinstance(flows, Iterable):
             self.trainable_flows = nn.ModuleList(
                 [flow for flow in self.flows if isinstance(flow, nn.Module)]
@@ -163,26 +148,34 @@ class NormalizingFlow(Model):
 
         if type(x) in (list, tuple):
             (x,) = x
-        lp, _ = log_prob(x, self.flows, self.base_dist)
+        lp, _ = log_prob(
+            x, self.flows, self.base_dist(self.base_mean, self.base_logvar.exp())
+        )
         return lp
 
     def parameters(self):
         return self.trainable_flows.parameters()
 
+    def _process_metrics(self, metrics, prefix):
+        return {f"{prefix}_{k}": v.mean() for k, v in metrics.items() if v is not None}
+
     def training_step(self, batch, batch_idx):
         loss, metrics = self.step(batch, batch_idx)
-        # self.log("train_loss", loss, on_epoch=True, on_step=False)
-        return loss, metrics
+        metrics = self._process_metrics(metrics, "train")
+        self.log_dict(metrics)
+        return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, *args, **kwargs):
         loss, metrics = self.step(batch, batch_idx)
-        # self.log("val_loss", loss, prog_bar=True, on_epoch=True, on_step=False)
-        return loss, metrics
+        metrics = self._process_metrics(metrics, "val")
+        self.log_dict(metrics)
+        return loss
 
     def test_step(self, batch, batch_idx):
         loss, metrics = self.step(batch, batch_idx)
-        # self.log("test_loss", loss, prog_bar=True, on_epoch=True, on_step=False)
-        return loss, metrics
+        metrics = self._process_metrics(metrics, "test")
+        self.log_dict(metrics)
+        return loss
 
 
 class HierarchicalNormalizingFlow(NormalizingFlow):
@@ -192,11 +185,15 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
     def step(self, batch, batch_idx):
         (x,) = batch
         x = x[:, :, : self.d].clone()
-        lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
+        lp, y = log_prob(
+            x.view(-1, self.d),
+            self.flows,
+            self.base_dist(self.base_mean, self.base_logvar.exp()),
+        )
         lp = lp.view(x.shape[:-1])
         lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
         loss = -lp.mean(0)
-        metrics = {"loss": loss}
+        metrics = {"loss": loss, "log-likelihood": lp}
         return loss, metrics
 
     def forward(self, batch):
@@ -208,11 +205,19 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
 
         if len(x.shape) == 3:
             x = x[:, :, : self.d].clone()
-            lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
+            lp, y = log_prob(
+                x.view(-1, self.d),
+                self.flows,
+                self.base_dist,
+                self.base_mean,
+                self.base_logvar.exp(),
+            )
             lp = lp.view(x.shape[:-1])
             lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
         else:
-            lp, y = log_prob(x, self.flows, self.base_dist)
+            lp, y = log_prob(
+                x, self.flows, self.base_dist, self.base_mean, self.base_logvar.exp()
+            )
         return lp
 
 
@@ -236,7 +241,12 @@ class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
                 J += t.log_abs_det_jacobian(x, y)
                 x = y
 
-            log_prob = self.base_dist.log_prob(x).sum(-1) + J
+            log_prob = (
+                self.base_dist(self.base_mean, self.base_logvar.exp())
+                .log_prob(x)
+                .sum(-1)
+                + J
+            )
             total_log_prob += log_prob
 
         return total_log_prob
@@ -249,9 +259,9 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
         self.prior_weight = prior_weight
 
     def step(self, batch, batch_idx):
-        gw_data, sel_data = batch
+        (gw_data,), (sel_data,) = batch
 
-        lp = log_prob_sb(
+        total_log_prob, log_prob, log_selection_bias = log_prob_sb(
             gw_data,
             sel_data,
             self,
@@ -259,8 +269,15 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
             self.prior_weight,
         )
 
-        loss = -lp.mean(0)
-        metrics = {"loss": loss}
+        loss = -total_log_prob
+
+        metrics = {
+            "loss": loss,
+            "log_likelihood": log_prob,
+            "log_likelihood_selection_bias": log_selection_bias,
+        }
+
+        loss = loss.mean()
         return loss, metrics
 
     def log_prob(self, gw_data, sel_data=None):
@@ -274,92 +291,14 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
             print("Got 2D data, reshaping to 3D")
             gw_data = gw_data[None]
 
-        return log_prob_sb(
+        loss, log_prob, log_sb = log_prob_sb(
             gw_data,
             sel_data,
             self,
             self.sb_weight,
             self.prior_weight,
         )
+        return log_prob
 
     def forward(self, *args, **kwargs):
         return self.log_prob(*args, **kwargs)
-
-    # def step(self, batch, batch_idx):
-    #     (x,) = batch
-    #     lp, y = log_prob(x.view(-1, 2), self.flows, self.base_dist)
-    #     lp = lp.view(x.shape[:-1])
-    #     lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
-    #     loss = -lp.mean(0)
-    #     return loss
-
-
-# def truncated_powerlaw(m1, index, mmin=5, mmax=50):
-#     try:
-#         output = m1.copy() ** index
-#         index_in = np.where((m1 >= mmin) * (m1 <= mmax))[0]
-#         index_out = np.where((m1 < mmin) + (m1 > mmax))[0]
-#         normalization = ((mmax) ** (1 + index) - mmin ** (1 + index)) / (1 + index)
-#         output[index_out] = 1e-30
-#         output[index_in] = m1[index_in] ** index / normalization
-#     except ZeroDivisionError:
-#         output = m1.copy() ** index
-#         index_in = np.where((m1 >= mmin) * (m1 <= mmax))[0]
-#         index_out = np.where((m1 < mmin) + (m1 > mmax))[0]
-#         normalization = np.log(mmax) - np.log(mmin)
-#         output[index_out] = 1e-30
-#         output[index_in] = m1[index_in] ** index / normalization
-#     return output
-
-
-# m1_axis = np.linspace(0.01, 100, 10000)
-
-
-# def M2_distribution(m2, m1, mmin):
-#     return 3 * m2**2 / (m1**3 - mmin**3)
-
-
-# events_posterior = []
-# events_prior = []
-# for event in catalog_data:
-#     event_data = catalog_data[event]
-#     if np.median(event_data["m2"]) > 3:
-#         posterior = np.stack(
-#             [event_data["m1"], event_data["m2"], event_data["z"]], axis=1
-#         )
-#         prior = event_data["z_prior"] / 1e9
-#         events_posterior.append(posterior)
-#         events_prior.append(prior)
-
-
-class HierarchicalNormalizingBayesianFlowSB(HierarchicalNormalizingFlowSB):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def step(self, batch, batch_idx):
-        (gw_data,), (sel_data,) = batch
-
-        lp = log_prob_sb(
-            gw_data,
-            sel_data,
-            self,
-            self.sb_weight,
-        )
-
-        loss = -lp.mean(0)
-
-        h = self.entropy()
-        h = h / len(lp)
-
-        self.log("nll", loss, on_epoch=True, on_step=False)
-        self.log("h", h, on_epoch=True, on_step=False)
-        loss = loss + 1 * h
-        return loss
-
-    def entropy(self):
-        h = 0
-        for m in self.modules():
-            if isinstance(m, BayesianPlanar):
-                h += m.entropy()
-
-        return h

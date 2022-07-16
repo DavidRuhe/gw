@@ -30,8 +30,8 @@ def flow_marginals(trainer, model, dataset, mode):
         fig = plt.figure()
         plt.plot(axes[i], prob.sum(axes_to_sum), label=axes_names[i])
 
-        model.logger.log_image(
-            key=f"{mode}_marginal_%d" % i, images=[fig], step=trainer.current_epoch
+        trainer.logger.log_image(
+            {f"{mode}_marginal_%d" % i: fig}, step=trainer.global_step
         )
         plt.close()
         # plt.savefig(os.path.join(dir, "marginal_%d.png" % d), bbox_inches="tight")
@@ -58,7 +58,7 @@ def flow_marginals(trainer, model, dataset, mode):
     plt.ylabel(axes_names[0])
     plt.tight_layout()
 
-    model.logger.log_image(
-        key=f"{mode}_flow_heatmap_m1m2", images=[fig], step=trainer.global_step
+    trainer.logger.log_image(
+        {f"{mode}_flow_heatmap_m1m2": fig}, step=trainer.global_step
     )
     plt.close()

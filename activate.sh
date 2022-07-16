@@ -7,5 +7,6 @@ if [[ ! -d $ENV_DIR ]]; then
 fi
 
 source $ENV_DIR/bin/activate
+export DATAROOT=$(pwd)/datasets/
 cd src/
 export PYTHONPATH=$(pwd)
