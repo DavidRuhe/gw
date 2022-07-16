@@ -17,6 +17,7 @@ trainer:
     patience: 1
   min_epochs: 256
   limit_train_batches: 1024
+  limit_val_batches: 16
   # schedules:
   #   sb_weight: [0, 0]
   #   prior_weight: [0, 0]

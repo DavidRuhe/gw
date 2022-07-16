@@ -91,7 +91,7 @@ def likelihood(m1m2z, model, z_distribution):
 
 def log_selection_bias(model, selection_data):
     x = selection_data[:, : model.d]
-    logp, _ = log_prob(x, model.flows, model.base_dist)
+    logp, _ = log_prob(x, model.flows, model.base_dist(model.base_mean, model.base_logvar.exp()))
     p_drawm1m2z = selection_data[:, 4]
     p_drawchi = selection_data[:, 5]
     ntrials = selection_data[:, 6]
@@ -111,10 +111,10 @@ def log_prob_sb(
     prior_weight,
 ):
 
-    x = gw_data[:, :, :model.d]
-    logp, _ = log_prob(x.view(-1, model.d), model.flows, model.base_dist)
+    x = gw_data[:, :, : model.d]
+    logp, _ = log_prob(x.view(-1, model.d), model.flows, model.base_dist(model.base_mean, model.base_logvar.exp()))
     logp = logp.view(x.shape[:-1])
-    q = torch.tensor(1.)
+    q = torch.tensor(1.0)
     if model.d >= 3 and gw_data.shape[-1] > 4:
         q = q * gw_data[:, :, 4] / 1e9  # z_prior, keep in mind.
     if model.d >= 4 and gw_data.shape[-1] > 5:
@@ -128,7 +128,7 @@ def log_prob_sb(
         if sel_data is not None:
             sb = log_selection_bias(model, sel_data)
             sb = sb.mean(0)
-            model.log("log_selection_bias", sb.mean(), on_epoch=True, on_step=False)
+            model.log("log_selection_bias", sb, on_epoch=True, on_step=False)
             ll = ll - sb * sb_weight
         else:
             print("Warning: no selection bias data provided.")
@@ -139,10 +139,11 @@ def log_prob_sb(
 class NormalizingFlow(pl.LightningModule):
     def __init__(self, dataset, flows, lr=1.0e-3):
         super().__init__()
-
         self.flows = flows
         self.d = dataset.dimensionality
-        self.base_dist = dist.Normal(torch.zeros(self.d), torch.ones(self.d))
+        self.base_mean = nn.Parameter(torch.zeros(self.d), requires_grad=True)
+        self.base_logvar = nn.Parameter(torch.zeros(self.d), requires_grad=True)
+        self.base_dist = torch.distributions.Normal
         self.lr = lr
         if isinstance(flows, Iterable):
             self.trainable_flows = nn.ModuleList(
@@ -155,7 +156,7 @@ class NormalizingFlow(pl.LightningModule):
 
         if type(x) in (list, tuple):
             (x,) = x
-        lp, _ = log_prob(x, self.flows, self.base_dist)
+        lp, _ = log_prob(x, self.flows, self.base_dist(self.base_mean, self.base_logvar.exp()))
         return lp
 
     def parameters(self):
@@ -169,7 +170,7 @@ class NormalizingFlow(pl.LightningModule):
         self.log("train_loss", loss, on_epoch=True, on_step=False)
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, *args, **kwargs):
         loss = self.step(batch, batch_idx)
         self.log("val_loss", loss, prog_bar=True, on_epoch=True, on_step=False)
         return loss
@@ -187,7 +188,7 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
     def step(self, batch, batch_idx):
         (x,) = batch
         x = x[:, :, : self.d].clone()
-        lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
+        lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist(self.base_mean, self.base_logvar.exp()))
         lp = lp.view(x.shape[:-1])
         lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
         loss = -lp.mean(0)
@@ -202,11 +203,11 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
 
         if len(x.shape) == 3:
             x = x[:, :, : self.d].clone()
-            lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
+            lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist, self.base_mean, self.base_logvar.exp())
             lp = lp.view(x.shape[:-1])
             lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
         else:
-            lp, y = log_prob(x, self.flows, self.base_dist)
+            lp, y = log_prob(x, self.flows, self.base_dist, self.base_mean, self.base_logvar.exp())
         return lp
 
 
@@ -230,7 +231,7 @@ class HierarchicalMarginalNormalizingFlow(HierarchicalNormalizingFlow):
                 J += t.log_abs_det_jacobian(x, y)
                 x = y
 
-            log_prob = self.base_dist.log_prob(x).sum(-1) + J
+            log_prob = self.base_dist(self.base_mean, self.base_logvar.exp()).log_prob(x).sum(-1) + J
             total_log_prob += log_prob
 
         return total_log_prob

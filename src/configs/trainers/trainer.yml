@@ -7,3 +7,4 @@ checkpoint:
     save_top_k: 1
 limit_train_batches: 262144
 limit_val_batches: 262144
+accelerator: "auto"

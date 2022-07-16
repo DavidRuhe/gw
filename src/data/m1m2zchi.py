@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 import os
+from pytorch_lightning.trainer.supporters import CombinedLoader
 
 # import sklearn
 
@@ -68,7 +69,7 @@ class M1M2ZChiDataset:
     dimensionality = 4
     has_normalization = True
 
-    n_grid = 32
+    n_grid = 64
     grid_m1 = np.linspace(*M_RNG, n_grid)
     grid_m2 = np.linspace(*M_RNG, n_grid)
     grid_z = np.linspace(*Z_RNG, n_grid)
@@ -85,13 +86,15 @@ class M1M2ZChiDataset:
         gw_path,
         hierarchical=True,
         train_val_test_split=(0.8, 0.1, 0.1),
-        loader_kwargs={},
+        loader_kwargs=dict(num_workers=8, pin_memory=True),
         train_batch_size=32,
+        val_batch_size=2048,
     ):
         gw_path = os.path.join(os.environ["DATAROOT"], gw_path)
 
         self.hierarchical = hierarchical
         self.train_batch_size = train_batch_size
+        self.val_batch_size = val_batch_size
 
         if not hierarchical:
             raise NotImplementedError
@@ -112,7 +115,16 @@ class M1M2ZChiDataset:
         return gw_loader
 
     def val_dataloader(self):
-        return None
+        gw_data = self.gw_data
+        gw_loader = torch.utils.data.DataLoader(
+            gw_data,
+            batch_size=self.val_batch_size,
+            shuffle=True,
+            **self.loader_kwargs
+        )
+        return gw_loader
+
+
 
     def test_dataloader(self):
         return None
@@ -167,8 +179,29 @@ class M1M2ZChiSBDataset(M1M2ZChiDataset):
         sb_data = self.sb_data
         sb_loader = torch.utils.data.DataLoader(
             sb_data,
-            batch_size=self.train_batch_size,
+            batch_size=self.val_batch_size,
             shuffle=True,
             **self.loader_kwargs
         )
         return gw_loader, sb_loader
+
+
+    def val_dataloader(self):
+        gw_data = self.gw_data
+        gw_loader = torch.utils.data.DataLoader(
+            gw_data,
+            batch_size=self.val_batch_size,
+            shuffle=False,
+            **self.loader_kwargs
+        )
+
+        sb_data = self.sb_data
+        sb_loader = torch.utils.data.DataLoader(
+            sb_data,
+            batch_size=self.val_batch_size,
+            shuffle=False,
+            **self.loader_kwargs
+        )
+        combined_loaders = CombinedLoader((gw_loader, sb_loader), mode="max_size_cycle")
+        return combined_loaders
+

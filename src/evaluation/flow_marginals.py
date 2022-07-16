@@ -20,8 +20,8 @@ def flow_marginals(trainer, model, dataset, mode):
     components = np.stack(np.meshgrid(*axes, indexing="ij")).reshape(d, -1).T
 
     resolutions = [len(ax) for ax in axes]
-    input = torch.from_numpy(components).float()
-    prob = model.log_prob(input).exp().view(*resolutions)
+    input = torch.from_numpy(components).float().to(model.device)
+    prob = model.log_prob(input).exp().view(*resolutions).cpu()
 
     numbered_axes = tuple(range(d))
 
