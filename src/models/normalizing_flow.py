@@ -66,7 +66,7 @@ def z_distribution(z):
     return dVdz_interp(z) * (1 + z) ** 1.7 / z_normalization
 
 
-def log_prob(x, transforms, base_dist):
+def log_prob(x, transforms, base_dist, base_loc, base_scale):
     x = x.clone()
     J = 0
     for t in transforms:
@@ -74,7 +74,7 @@ def log_prob(x, transforms, base_dist):
         J += t.log_abs_det_jacobian(x, y)
         x = y
 
-    log_prob = base_dist.log_prob(x).sum(-1) + J
+    log_prob = base_dist(base_loc, base_scale).log_prob(x).sum(-1) + J
     return log_prob, y
 
 
@@ -90,7 +90,7 @@ def likelihood(m1m2z, model, z_distribution):
 
 def log_selection_bias(model, selection_data):
     x = selection_data[:, : model.d]
-    logp, _ = log_prob(x, model.flows, model.base_dist)
+    logp, _ = log_prob(x, model.flows, model.base_dist, model.base_loc, model.base_logscale.exp())
     p_drawm1m2z = selection_data[:, 4]
     p_drawchi = selection_data[:, 5]
     ntrials = selection_data[:, 6]
@@ -111,7 +111,7 @@ def log_prob_sb(
 ):
 
     x = gw_data[:, :, : model.d]
-    logp, _ = log_prob(x.view(-1, model.d), model.flows, model.base_dist)
+    logp, _ = log_prob(x.view(-1, model.d), model.flows, model.base_dist, model.base_loc, model.base_logscale.exp())
     logp = logp.view(x.shape[:-1])
     q = torch.tensor(1.0)
     if model.d >= 3 and gw_data.shape[-1] > 4:
@@ -151,7 +151,11 @@ class NormalizingFlow(Model):
 
         self.flows = flows
         self.d = dataset.dimensionality
-        self.base_dist = dist.Normal(torch.zeros(self.d), torch.ones(self.d))
+        self.register_buffer("base_loc", torch.zeros(self.d))
+        self.register_buffer("base_logscale", torch.zeros(self.d))
+        
+        self.base_dist = dist.Normal # (torch.zeros(self.d), torch.ones(self.d))
+        # self.base_dist_ = dist.Normal
         if isinstance(flows, Iterable):
             self.trainable_flows = nn.ModuleList(
                 [flow for flow in self.flows if isinstance(flow, nn.Module)]
@@ -163,7 +167,7 @@ class NormalizingFlow(Model):
 
         if type(x) in (list, tuple):
             (x,) = x
-        lp, _ = log_prob(x, self.flows, self.base_dist)
+        lp, _ = log_prob(x, self.flows, self.base_dist, self.base_loc, self.base_logscale.exp())
         return lp
 
     def parameters(self):
@@ -192,7 +196,7 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
     def step(self, batch, batch_idx):
         (x,) = batch
         x = x[:, :, : self.d].clone()
-        lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
+        lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist, self.base_loc, self.base_logscale.exp())
         lp = lp.view(x.shape[:-1])
         lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
         loss = -lp.mean(0)
@@ -208,11 +212,11 @@ class HierarchicalNormalizingFlow(NormalizingFlow):
 
         if len(x.shape) == 3:
             x = x[:, :, : self.d].clone()
-            lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist)
+            lp, y = log_prob(x.view(-1, self.d), self.flows, self.base_dist, self.base_loc, self.base_logscale.exp())
             lp = lp.view(x.shape[:-1])
             lp = torch.logsumexp(lp, dim=0) - math.log(lp.shape[0])
         else:
-            lp, y = log_prob(x, self.flows, self.base_dist)
+            lp, y = log_prob(x, self.flows, self.base_dist, self.base_loc, self.base_logscale.exp())
         return lp
 
 
@@ -263,7 +267,7 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
         metrics = {"loss": loss}
         return loss, metrics
 
-    def log_prob(self, gw_data, sel_data=None):
+    def log_prob(self, gw_data, sel_data=None, verbose=False):
 
         if type(gw_data) in (tuple, list):
             (gw_data,) = gw_data
@@ -271,7 +275,8 @@ class HierarchicalNormalizingFlowSB(NormalizingFlow):
             (sel_data,) = sel_data
 
         if len(gw_data.shape) == 2:
-            print("Got 2D data, reshaping to 3D")
+            if verbose:
+                print("Got 2D data, reshaping to 3D")
             gw_data = gw_data[None]
 
         return log_prob_sb(

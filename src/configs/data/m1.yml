@@ -1,4 +1,0 @@
-object: "data.m1.M1Dataset"
-# path: "/project/druhe/gw/Combined_GWTC_m1m2chieffz.npz"
-path: "/Users/druhe/Projects/gw/src/../datasets/Combined_GWTC_m1m2chieffz.npz"
-fold: 0

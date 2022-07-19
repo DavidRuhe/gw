@@ -82,7 +82,10 @@ class Checkpoint:
         for m in metrics:
             if m in self.best_metrics and metrics[m] < self.best_metrics[m]:
                 self.best_metrics[m] = metrics[m]
-                save_path = os.path.join(dir, f"epoch_{epoch}_step_{step}_{m.replace('/', '_')}={metrics[m]:.4f}.pt")
+                save_path = os.path.join(
+                    dir,
+                    f"epoch_{epoch}_step_{step}_{m.replace('/', '_')}={metrics[m]:.4f}.pt",
+                )
                 torch.save(model.state_dict(), save_path)
                 if m in self.save_paths:
                     os.remove(self.save_paths[m])
@@ -133,7 +136,7 @@ class WANDBLogger:
         return self._log(image_dict, step)
 
 
-def main(config, experiment):
+def main(config):
 
     dataset = object_from_config(config, "dataset")(**config["dataset"])
 
@@ -237,20 +240,22 @@ def main(config, experiment):
 
         if run_validation:
             trainer.fit(model, train_loader, val_loader)
-            (result,) = trainer.validate(model, val_loader, ckpt_path="best")
-            if "val_loss" in result:
-                assert result["val_loss"] == checkpoint.best_model_score.item()
-        else:
-            trainer.fit(model, train_loader)
-            result = {}
-        if run_test:
-            if len(test_loader) > 0:
-                (result,) = trainer.test(model, test_loader, ckpt_path="best")
-    else:
-        if run_test:
-            (result,) = trainer.test(model, test_loader)
-        else:
-            result = {}
+    #         (result,) = trainer.validate(model, val_loader, ckpt_path="best")
+    #         if "val_loss" in result:
+    #             assert result["val_loss"] == checkpoint.best_model_score.item()
+    #     else:
+    #         trainer.fit(model, train_loader)
+    #         result = {}
+    #     if run_test:
+    #         if len(test_loader) > 0:
+    #             (result,) = trainer.test(model, test_loader, ckpt_path="best")
+    # else:
+    #     if run_test:
+    #         (result,) = trainer.test(model, test_loader)
+    #     else:
+    #         result = {}
+
+    result = {}
 
     return result
 
@@ -361,11 +366,9 @@ if __name__ == "__main__":
             assert (
                 config["experiment"]["name"] is not None
             ), 'Please provide "experiment.name"'
-            experiment = wandb.init(config=args, dir=tmpdir, **config["experiment"])
-        else:
-            experiment = None
+            wandb.init(config=args, dir=tmpdir, **config["experiment"])
         try:
-            result = main(config, experiment)
+            result = main(config)
             if result is not None:
                 config = {**config, **result}
         except Exception as e:

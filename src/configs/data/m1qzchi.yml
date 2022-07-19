@@ -1,4 +1,0 @@
-object: "data.m1qzchi.M1QZChiDataset"
-# path: "/project/druhe/gw/Combined_GWTC_m1m2chieffz.npz"
-gw_path: "sampleDict_FAR_1_in_1_yr.pickle"
-train_batch_size: 32

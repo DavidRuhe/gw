@@ -9,6 +9,8 @@ import torch
 
 @torch.no_grad()
 def flow_marginals(trainer, model, dataset, mode):
+    if trainer.logger is None:
+        return
     axes_names = []
     axes = []
 

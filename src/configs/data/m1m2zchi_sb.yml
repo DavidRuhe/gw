@@ -2,3 +2,4 @@ object: "data.m1m2zchi.M1M2ZChiSBDataset"
 gw_path: "sampleDict_FAR_1_in_1_yr.pickle"
 sb_path: "injectionDict_FAR_1_in_1.pickle"
 train_batch_size: 32
+val_batch_size: 32

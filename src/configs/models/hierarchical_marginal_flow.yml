@@ -1,3 +1,0 @@
-object: models.normalizing_flow.HierarchicalMarginalNormalizingFlow
-lr: 0.005
-ckpt: null
