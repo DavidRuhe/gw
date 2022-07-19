@@ -1,8 +1,6 @@
 # Should be first line.
 command: python train_flow.py -D configs/data/m1m2zchi.yml -F configs/flows/planar.yml -M configs/models/hierarchical_flow.yml -E configs/evaluation/flow_marginals.yml
 seed: 42
-model:
-  lr: 0.001
 
 loader:
   batch_size: 32
@@ -12,10 +10,11 @@ flow:
   num_layers: 10
 
 trainer:
-  earlystopping:
-    patience: 1
+  # earlystopping:
+  #   patience: 1
   min_epochs: 256
   limit_train_batches: 1024
+  limit_val_batches: 1024
 
 dataset:
   train_val_test_split: [0.0, 1.0, 0.0]

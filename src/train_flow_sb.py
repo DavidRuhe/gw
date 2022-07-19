@@ -6,14 +6,10 @@ import os
 import shutil
 import sys
 import tempfile
-from functools import partial
-from typing import Iterable
-
-# from pytorch_lightning import callbacks, loggers
 
 import yaml
 
-from configs.parse import add_arguments, add_group, flatten, unflatten
+from utils.parse import add_arguments, add_group, flatten, unflatten
 from utils import count_parameters, set_seed
 
 logging.basicConfig(level=logging.INFO)

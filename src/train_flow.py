@@ -1,3 +1,4 @@
+import torch
 import argparse
 import importlib
 import logging
@@ -5,13 +6,10 @@ import os
 import shutil
 import sys
 import tempfile
-from functools import partial
-from typing import Iterable
-from pytorch_lightning import callbacks, loggers
 
 import yaml
 
-from configs.parse import add_arguments, add_group, flatten, unflatten
+from utils.parse import add_arguments, add_group, flatten, unflatten
 from utils import count_parameters, set_seed
 
 logging.basicConfig(level=logging.INFO)
@@ -24,26 +22,26 @@ if USE_WANDB:
     import wandb
 
 
-class CSVLogger(loggers.CSVLogger):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+# class CSVLogger(loggers.CSVLogger):
+#     def __init__(self, *args, **kwargs):
+#         super().__init__(*args, **kwargs)
 
-    def log_image(self, key, images, step=None, **kwargs) -> None:
+#     def log_image(self, key, images, step=None, **kwargs) -> None:
 
-        if not isinstance(images, list):
-            raise TypeError(f'Expected a list as "images", found {type(images)}')
+#         if not isinstance(images, list):
+#             raise TypeError(f'Expected a list as "images", found {type(images)}')
 
-        for i, fig in enumerate(images):
-            if step is not None:
-                save_file = os.path.join(self.log_dir, f"{key}_{step}_{i}.png")
-            else:
-                save_file = os.path.join(self.log_dir, f"{key}_{i}.png")
+#         for i, fig in enumerate(images):
+#             if step is not None:
+#                 save_file = os.path.join(self.log_dir, f"{key}_{step}_{i}.png")
+#             else:
+#                 save_file = os.path.join(self.log_dir, f"{key}_{i}.png")
 
-            fig.savefig(save_file, bbox_inches="tight", **kwargs)
-            fig.clf()
+#             fig.savefig(save_file, bbox_inches="tight", **kwargs)
+#             fig.clf()
 
 
-class EvaluationLoop(callbacks.Callback):
+class EvaluationLoop:
     def __init__(self, evaluation_config, dataset):
         self.evaluation_config = evaluation_config
         self.dataset = dataset
@@ -63,17 +61,82 @@ class EvaluationLoop(callbacks.Callback):
                     **self.evaluation_config[k],
                 )
 
-    def on_validation_epoch_end(self, trainer, model):
+    def on_validation_epoch_end(self, trainer, model, *args, **kwargs):
         self._loop(trainer, model, mode="val")
 
-    def on_test_epoch_end(self, trainer, model):
-        self._loop(trainer, model, mode="test")
 
-    def on_train_epoch_end(self, trainer, model):
-        self._loop(trainer, model, mode="train")
+class Checkpoint:
+    def __init__(self, metrics):
+        super().__init__()
+        self.best_metrics = {m: float("inf") for m in metrics}
+        self.save_paths = {}
+
+    def on_validation_epoch_end(self, trainer, model, metrics, *args, **kwargs):
+        if trainer.logger is None:
+            print(f"No logger found, skipping checkpoint")
+            return
+
+        dir = trainer.logger.dir
+        epoch = trainer.current_epoch
+        step = trainer.global_step
+        for m in metrics:
+            if m in self.best_metrics and metrics[m] < self.best_metrics[m]:
+                self.best_metrics[m] = metrics[m]
+                save_path = os.path.join(
+                    dir,
+                    f"epoch_{epoch}_step_{step}_{m.replace('/', '_')}={metrics[m]:.4f}.pt",
+                )
+                torch.save(model.state_dict(), save_path)
+                if m in self.save_paths:
+                    os.remove(self.save_paths[m])
+                self.save_paths[m] = save_path
 
 
-def main(config, experiment):
+# class PropertyScheduler(callbacks.Callback):
+#     def __init__(self, schedules):
+
+#         self.schedules = {k: {} for k in schedules if schedules[k] is not None}
+#         for k in self.schedules:
+#             assert (
+#                 len(schedules[k]) % 2 == 0
+#             ), f"{k} schedule must be even with epoch, value pairs."
+
+#             self.schedules[k] = {
+#                 schedules[k][i]: schedules[k][i + 1]
+#                 for i in range(0, len(schedules[k]), 2)
+#             }
+
+#     def on_epoch_start(self, trainer, model):
+#         anything_changed = False
+#         for k in self.schedules:
+#             if trainer.current_epoch in self.schedules[k]:
+#                 setattr(model, k, self.schedules[k][trainer.current_epoch])
+#                 anything_changed = True
+
+#         if anything_changed:
+#             print("\n\nUpdated model properties:")
+#             for k in self.schedules:
+#                 print(f"{k}: {getattr(model, k)}")
+#             print("\n")
+#         return super().on_epoch_start(trainer, model)
+
+
+class WANDBLogger:
+    def __init__(self):
+        self.dir = wandb.run.dir
+
+    def _log(self, dict, step):
+        wandb.log(dict, step=step)
+
+    def log_metrics(self, metrics, step):
+        return self._log(metrics, step)
+
+    def log_image(self, image_dict, step):
+        image_dict = {k: wandb.Image(v) for k, v in image_dict.items()}
+        return self._log(image_dict, step)
+
+
+def main(config):
 
     dataset = object_from_config(config, "dataset")(**config["dataset"])
 
@@ -94,74 +157,82 @@ def main(config, experiment):
     else:
         model = model_object(
             dataset=dataset,
-            flows=flows, 
-            **config.pop("model")
+            flows=flows,
+            **config.pop("model"),
         )
 
     print(f"Parameters: {count_parameters(model)}")
 
     callback_chain = []
+    # if "scheduler" in config["trainer"]:
+    #     callback_chain.append(PropertyScheduler(config["trainer"].pop("scheduler")))
+
     if "evaluation" in config:
         evaluate = EvaluationLoop(
             evaluation_config=config["evaluation"],
             dataset=dataset,
         )
     callback_chain.append(evaluate)
-    if run_validation > 0:
-        monitor = "val_loss"
-    else:
-        monitor = "train_loss"
 
-    checkpoint = callbacks.ModelCheckpoint(
-        monitor=monitor, mode="min", dirpath=config["dir"], **config['trainer'].pop("checkpoint")
-    )
-    callback_chain.append(checkpoint)
-    earlystop = callbacks.EarlyStopping(
-        monitor=monitor, **config["trainer"].pop("earlystopping")
-    )
-    callback_chain.append(earlystop)
-    from pytorch_lightning.callbacks import ProgressBar
+    # checkpoint = callbacks.ModelCheckpoint(
+    #     monitor=monitor,
+    #     mode="min",
+    #     dirpath=config["dir"],
+    #     **config["trainer"].pop("checkpoint"),
+    # )
+    callback_chain.append(Checkpoint(metrics=["val/loss"]))
+    # earlystop = callbacks.EarlyStopping(
+    #     monitor=monitor, **config["trainer"].pop("earlystopping")
+    # )
+    # callback_chain.append(earlystop)
+    # from pytorch_lightning.callbacks import ProgressBar
 
-    class MeterlessProgressBar(ProgressBar):
-        def _update_bar(self, bar):
-            bar.dynamic_ncols = False
-            bar.ncols = 0
-            return bar
+    # class MeterlessProgressBar(ProgressBar):
+    #     def _update_bar(self, bar):
+    #         bar.dynamic_ncols = False
+    #         bar.ncols = 0
+    #         return bar
 
-        def init_train_tqdm(self):
-            bar = self._update_bar(super().init_train_tqdm())
-            return bar
+    #     def init_train_tqdm(self):
+    #         bar = self._update_bar(super().init_train_tqdm())
+    #         return bar
 
-        def init_validation_tqdm(self):
-            bar = self._update_bar(super().init_validation_tqdm())
-            return bar
+    #     def init_validation_tqdm(self):
+    #         bar = self._update_bar(super().init_validation_tqdm())
+    #         return bar
 
-        def init_sanity_tqdm(self):
-            bar = self._update_bar(super().init_sanity_tqdm())
-            return bar
+    #     def init_sanity_tqdm(self):
+    #         bar = self._update_bar(super().init_sanity_tqdm())
+    #         return bar
 
-        def init_predict_tqdm(self):
-            bar = self._update_bar(super().init_predict_tqdm())
-            return bar
+    #     def init_predict_tqdm(self):
+    #         bar = self._update_bar(super().init_predict_tqdm())
+    #         return bar
 
-        def init_test_tqdm(self):
-            bar = self._update_bar(super().init_test_tqdm())
-            return bar
+    #     def init_test_tqdm(self):
+    #         bar = self._update_bar(super().init_test_tqdm())
+    #         return bar
 
-    bar = MeterlessProgressBar(refresh_rate=1)
-    callback_chain.append(bar)
+    # bar = MeterlessProgressBar(refresh_rate=1)
+    # callback_chain.append(bar)
 
     if USE_WANDB:
-        logger = loggers.WandbLogger(experiment=experiment, dir=config["dir"])
+        logger = WANDBLogger()
     else:
-        logger = CSVLogger(config["dir"])
+        logger = None
+    # logger = loggers.WandbLogger(experiment=experiment, dir=config["dir"])
+    # else:
+    # logger = CSVLogger(config["dir"])
+
+    optimizer = torch.optim.Adam(model.parameters())
 
     trainer = object_from_config(config, "trainer")(
         **config.pop("trainer"),
         # callbacks=[checkpoint, earlystop, evaluate, bar],
         callbacks=callback_chain,
+        optimizer=optimizer,
         logger=logger,
-        deterministic=True,
+        # deterministic=True,
         # enable_progress_bar=False,
     )
 
@@ -169,20 +240,23 @@ def main(config, experiment):
 
         if run_validation:
             trainer.fit(model, train_loader, val_loader)
-            (result,) = trainer.validate(model, val_loader, ckpt_path="best")
-            if "val_loss" in result:
-                assert result["val_loss"] == checkpoint.best_model_score.item()
+        #         (result,) = trainer.validate(model, val_loader, ckpt_path="best")
+        #         if "val_loss" in result:
+        #             assert result["val_loss"] == checkpoint.best_model_score.item()
         else:
-            trainer.fit(model, train_loader)
-            result = {}
-        if run_test:
-            if len(test_loader) > 0:
-                (result,) = trainer.test(model, test_loader, ckpt_path="best")
-    else:
-        if run_test:
-            (result,) = trainer.test(model, test_loader)
-        else:
-            result = {}
+            raise NotImplementedError
+    #         trainer.fit(model, train_loader)
+    #         result = {}
+    #     if run_test:
+    #         if len(test_loader) > 0:
+    #             (result,) = trainer.test(model, test_loader, ckpt_path="best")
+    # else:
+    #     if run_test:
+    #         (result,) = trainer.test(model, test_loader)
+    #     else:
+    #         result = {}
+
+    result = {}
 
     return result
 
@@ -269,9 +343,10 @@ if __name__ == "__main__":
     )
     run_args = run_config["trainer"] if "trainer" in run_config else {}
     trainer_config = load_yaml(trainer_config_path)
-    add_group(parser, run_args, trainer_config, "trainer")
+    add_group(parser, run_args, flatten(trainer_config), "trainer")
 
     evaluation_config_paths = pop_configs_from_sys_argv("-E", default=[])
+    run_args = run_config["evaluation"] if "evaluation" in run_config else {}
 
     for path in evaluation_config_paths:
         name, ext = os.path.splitext(os.path.basename(path))
@@ -292,11 +367,9 @@ if __name__ == "__main__":
             assert (
                 config["experiment"]["name"] is not None
             ), 'Please provide "experiment.name"'
-            experiment = wandb.init(config=args, dir=tmpdir, **config["experiment"])
-        else:
-            experiment = None
+            wandb.init(config=args, dir=tmpdir, **config["experiment"])
         try:
-            result = main(config, experiment)
+            result = main(config)
             if result is not None:
                 config = {**config, **result}
         except Exception as e:

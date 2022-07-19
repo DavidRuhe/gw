@@ -192,7 +192,11 @@ class M1M2ZChiDataset:
         return gw_loader
 
     def val_dataloader(self):
-        return None
+        gw_data = self.gw_data
+        gw_loader = DataLoader(
+            gw_data, batch_size=self.val_batch_size, shuffle=False, **self.loader_kwargs
+        )
+        return gw_loader
 
     def test_dataloader(self):
         return None
