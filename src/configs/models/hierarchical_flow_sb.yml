@@ -2,3 +2,6 @@ object: models.normalizing_flow.HierarchicalNormalizingFlowSB
 sb_weight: 0.0
 ckpt: null
 prior_weight: 0
+train_z: true
+dims_to_constrain_positive: null
+positive_transform: null

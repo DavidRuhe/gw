@@ -21,9 +21,13 @@ def flow_marginals(trainer, model, dataset, mode):
     d = dataset.dimensionality
     components = np.stack(np.meshgrid(*axes, indexing="ij")).reshape(d, -1).T
 
+    components = torch.from_numpy(components).float()
+
+    if dataset.normalize:
+        components[:, :2] = dataset.normalize_forward(components[:, :2])
+
     resolutions = [len(ax) for ax in axes]
-    input = torch.from_numpy(components).float()
-    prob = model.log_prob(input).exp().view(*resolutions)
+    prob = model(components).exp().view(*resolutions)
 
     numbered_axes = tuple(range(d))
 

@@ -1,2 +1,5 @@
 object: models.normalizing_flow.HierarchicalNormalizingFlow
 ckpt: null
+train_z: true
+dims_to_constrain_positive: null
+positive_transform: null

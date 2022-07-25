@@ -72,6 +72,9 @@ class Checkpoint:
         self.save_paths = {}
 
     def on_validation_epoch_end(self, trainer, model, metrics, *args, **kwargs):
+        if trainer.logger is None:
+            print(f"No logger found, skipping checkpoint")
+            return
         dir = trainer.logger.dir
         epoch = trainer.current_epoch
         step = trainer.global_step

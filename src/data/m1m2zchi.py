@@ -11,6 +11,10 @@ Z_RNG = (0.1, 3)
 CHI_RNG = (-1, 1)
 
 
+def softplus_inv(y):
+    return y + y.neg().expm1().neg().log()
+
+
 class DataLoader:
     batches = None
 
@@ -103,7 +107,7 @@ class ConcatDataLoader:
         return self.max_size
 
 
-def process_gw_data(path):
+def process_gw_data(path, normalize_fn=None):
     events = np.load(path, allow_pickle=True)
     datasets = []
     m1min, m1max = float("inf"), -float("inf")
@@ -136,6 +140,8 @@ def process_gw_data(path):
         chi_prior = torch.from_numpy(event["Xeff_priors"])
 
         gw_data = torch.stack([m1, m2, z, chi, z_prior, chi_prior], dim=-1).float()
+        if normalize_fn is not None:
+            gw_data[:, :2] = normalize_fn(gw_data[:, :2])
 
         datasets.append(TensorDataset(gw_data))
 
@@ -146,7 +152,6 @@ def process_gw_data(path):
 
 class M1M2ZChiDataset:
     dimensionality = 4
-    has_normalization = True
 
     n_grid = 32
     grid_m1 = np.linspace(*M_RNG, n_grid)
@@ -168,6 +173,7 @@ class M1M2ZChiDataset:
         loader_kwargs={},
         train_batch_size=32,
         val_batch_size=32,
+        normalize=True,
     ):
         gw_path = os.path.join(os.environ["DATAROOT"], gw_path)
 
@@ -178,8 +184,16 @@ class M1M2ZChiDataset:
         if not hierarchical:
             raise NotImplementedError
 
-        self.gw_data = process_gw_data(gw_path)
+        if normalize:
+            self.gw_data = process_gw_data(gw_path, normalize_fn=self.normalize_forward)
+        else:
+            self.gw_data = process_gw_data(gw_path)
         self.loader_kwargs = loader_kwargs
+        self.normalize = normalize
+
+    def normalize_forward(self, data):
+        # return softplus_inv(data)
+        return data.log()
 
     def train_dataloader(self):
         gw_data = self.gw_data

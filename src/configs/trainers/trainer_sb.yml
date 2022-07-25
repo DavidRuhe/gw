@@ -1,12 +1,5 @@
 object: trainers.Trainer
 max_epochs: 262144
 min_epochs: 1
-# earlystopping:
-#     patience: 1
-# checkpoint:
-#     save_top_k: 1
 limit_train_batches: 262144
 limit_val_batches: 262144
-# scheduler:
-#     sb_weight: null
-#     prior_weight: null

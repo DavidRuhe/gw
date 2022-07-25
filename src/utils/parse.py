@@ -61,6 +61,13 @@ def parse_arg_default(default_type):
         # check if list
         if str(arg)[0] == "[" and str(arg)[-1] == "]":
             return ast.literal_eval(arg)
+        # check if boolean
+        elif str(arg).lower() in ("yes", "y", "true", "t", "1"):
+            return True
+        elif str(arg).lower() in ("no", "n", "false", "f", "0"):
+            return False
+        elif str(arg).isdigit():
+            return int(arg)
         elif default_type == type(None):
             return arg
         else:
@@ -160,5 +167,5 @@ def parse_args():
 
     args = parser.parse_args()
     args = unflatten(vars(args))
-    set_seed(args['seed'])
+    set_seed(args["seed"])
     return args

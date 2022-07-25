@@ -6,12 +6,11 @@ loader:
   batch_size: 32
 
 flow:
-  input_dim: 4
   num_layers: 10
+  input_dim: 4
 
 trainer:
-  # earlystopping:
-  #   patience: 1
+  object: trainers.trainer.Trainer
   min_epochs: 256
   limit_train_batches: 1024
   limit_val_batches: 1024
